@@ -132,19 +132,29 @@ class CrazyflieGeometricController(rclpy.node.Node):
     #      kalman.statePX/PY/PZ (velocity in the BODY frame) and gyro.x/y/z (angular rates in deg/s).
 
     def _pose_msg_callback(self, msg: PoseStamped):
+        
+        self.position = np.array([msg.pose.position.x, msg.pose.position.y, msg.pose.position.z])
 
-        # self.position = ...
-        # self.attitude = ...
-        # self.R_WB = ...
-
-        return # remove this statement after finishing this part
+        quaternion = msg.pose.orientation
+        q = [quaternion.x, quaternion.y, quaternion.z, quaternion.w]
+        euler = np.array(tf_transformations.euler_from_quaternion(q))
+        self.attitude = (euler+np.pi) % (2*np.pi) - np.pi
+       
+        self.R_WB = tf_transformations.euler_matrix(euler[0], euler[1], euler[2]) [:3, :3]
+        
+        # return # remove this statement after finishing this part
 
 
     def _twist_msg_callback(self, msg: TwistStamped):
-        # self.velocity = ...
-        # self.omega_B = ...
+        v = msg.twist.linear
+        v_B = np.array([v.x, v.y, v.z])
 
-        return # remove this statement after finishing this part
+        omega = msg.twist.angular
+
+        self.velocity = self.R_WB @ v_B 
+        self.omega_B  = np.deg2rad(np.array([omega.x, omega.y, omega.z]))
+
+        # return # remove this statement after finishing this part
 
 
     def start_trajectory(self, msg):
