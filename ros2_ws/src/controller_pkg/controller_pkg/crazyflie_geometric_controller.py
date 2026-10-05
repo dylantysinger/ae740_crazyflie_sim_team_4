@@ -42,9 +42,13 @@ class CrazyflieGeometricController(rclpy.node.Node):
         #
         # Each gain is a numpy array of size 3 (one gain per axis):
         # - self.Kp -> position gain         (N/m),      axes (x, y, z) of the world frame
+        self.Kp = np.array(0*[0.,0.,1.])
         # - self.Kv -> velocity gain         (N s/m),    axes (x, y, z) of the world frame
+        self.Kp = np.array([0.,0.,0.])
         # - self.KR -> attitude gain         (Nm/rad),   axes (x, y, z) of the body frame
+        self.Kp = np.array(2.0e-3/3.14*[1.,1.,0.1])
         # - self.Kw -> angular velocity gain (Nm s/rad), axes (x, y, z) of the body frame
+        self.Kp = np.array(2.0e-3/3.14*[2.,2.,0.2])
         #
         # Hints:
         #   1. Start by tuning the gains for takeoff and hover, then the circular trajectory.
@@ -107,7 +111,7 @@ class CrazyflieGeometricController(rclpy.node.Node):
         self.position_sub       = self.create_subscription(PoseStamped, f'/{prefix}/pose', self._pose_msg_callback, 10)
         self.velocity_sub       = self.create_subscription(TwistStamped, f'/{prefix}/twist', self._twist_msg_callback, 10)
 
-        self.reference_path_pub = self.create_publisher(Path, f'/{prefix}/geo_reference_path', 10) 
+        self.reference_path_pub = self.create_publisher(Path, f'/{prefix}/geo_reference_path', 10)
         self.force_torque_pub   = self.create_publisher(ForceTorqueCmd, f'/{prefix}/force_torque_cmd', 10)
 
 
@@ -138,16 +142,16 @@ class CrazyflieGeometricController(rclpy.node.Node):
     #      kalman.statePX/PY/PZ (velocity in the BODY frame) and gyro.x/y/z (angular rates in deg/s).
 
     def _pose_msg_callback(self, msg: PoseStamped):
-        
+
         self.position = np.array([msg.pose.position.x, msg.pose.position.y, msg.pose.position.z])
 
         quaternion = msg.pose.orientation
         q = [quaternion.x, quaternion.y, quaternion.z, quaternion.w]
         euler = np.array(tf_transformations.euler_from_quaternion(q))
         self.attitude = (euler+np.pi) % (2*np.pi) - np.pi
-       
+
         self.R_WB = tf_transformations.euler_matrix(euler[0], euler[1], euler[2]) [:3, :3]
-        
+
         # return # remove this statement after finishing this part
 
 
@@ -157,7 +161,7 @@ class CrazyflieGeometricController(rclpy.node.Node):
 
         omega = msg.twist.angular
 
-        self.velocity = self.R_WB @ v_B 
+        self.velocity = self.R_WB @ v_B
         self.omega_B  = np.deg2rad(np.array([omega.x, omega.y, omega.z]))
 
         # return # remove this statement after finishing this part
@@ -259,7 +263,7 @@ class CrazyflieGeometricController(rclpy.node.Node):
         msg.torque_y  = float(torque[1])    # [N*m]
         msg.torque_z  = float(torque[2])    # [N*m]
         self.force_torque_pub.publish(msg)
-        
+
 
     def publish_reference_path(self, t):
         reference_path = Path()
