@@ -14,11 +14,11 @@ import tf_transformations
 
 # TODO overview:
 #   PART 1: Choose the gains of the geometric controller (self.Kp, self.Kv, self.KR, self.Kw).
-#   PART 2: Add the ROS2 subscribers for the state data and the publishers for the command and reference path.
-#   PART 3: Parse the pose and twist messages into the state variables used by the controller.
+# DONE  PART 2: Add the ROS2 subscribers for the state data and the publishers for the command and reference path.
+# DONE  PART 3: Parse the pose and twist messages into the state variables used by the controller.
 #   PART 4: Implement the 'horizontal_circle' reference trajectory (position, velocity, acceleration, yaw).
 #   PART 5: Implement the geometric controller that computes the collective thrust and body torques.
-#   PART 6: Implement cmd_force_torque to publish the force-torque command to the Crazyflie.
+# DONE  PART 6: Implement cmd_force_torque to publish the force-torque command to the Crazyflie.
 #   PART 7: Complete the control loop to compute and send the command, and stop the motors after landing.
 
 
@@ -103,6 +103,12 @@ class CrazyflieGeometricController(rclpy.node.Node):
         # topic type -> ForceTorqueCmd
         # topic name -> {prefix}/force_torque_cmd
         # publisher variable -> self.force_torque_pub
+
+        self.position_sub       = self.create_subscription(PoseStamped, f'/{prefix}/pose', self._pose_msg_callback, 10)
+        self.velocity_sub       = self.create_subscription(TwistStamped, f'/{prefix}/twist', self._twist_msg_callback, 10)
+
+        self.reference_path_pub = self.create_publisher(Path, f'/{prefix}/geo_reference_path', 10) 
+        self.force_torque_pub   = self.create_publisher(ForceTorqueCmd, f'/{prefix}/force_torque_cmd', 10)
 
 
         self.takeoffService = self.create_subscription(Empty, f'/all/geo_takeoff', self.takeoff, 10)
@@ -246,7 +252,14 @@ class CrazyflieGeometricController(rclpy.node.Node):
     #       ae740_crazyflie_sim/ros2_ws/src/crazyswarm2/crazyflie_interfaces/msg/ForceTorqueCmd.msg
     #
     # def cmd_force_torque(self, thrust, torque):
-
+    def cmd_force_torque(self, thrust, torque):
+        msg = ForceTorqueCmd()
+        msg.thrust_si = float(thrust)       # [N]
+        msg.torque_x  = float(torque[0])    # [N*m]
+        msg.torque_y  = float(torque[1])    # [N*m]
+        msg.torque_z  = float(torque[2])    # [N*m]
+        self.force_torque_pub.publish(msg)
+        
 
     def publish_reference_path(self, t):
         reference_path = Path()
