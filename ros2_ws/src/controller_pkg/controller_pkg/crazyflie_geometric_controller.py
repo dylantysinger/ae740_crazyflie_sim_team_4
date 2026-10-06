@@ -44,11 +44,11 @@ class CrazyflieGeometricController(rclpy.node.Node):
         # - self.Kp -> position gain         (N/m),      axes (x, y, z) of the world frame
         self.Kp = np.array(0*[0.,0.,1.])
         # - self.Kv -> velocity gain         (N s/m),    axes (x, y, z) of the world frame
-        self.Kp = np.array([0.,0.,0.])
+        self.Kv = np.array([0.,0.,0.])
         # - self.KR -> attitude gain         (Nm/rad),   axes (x, y, z) of the body frame
-        self.Kp = np.array(2.0e-3/3.14*[1.,1.,0.1])
+        self.KR = np.array(2.0e-3/3.14*[1.,1.,0.1])
         # - self.Kw -> angular velocity gain (Nm s/rad), axes (x, y, z) of the body frame
-        self.Kp = np.array(2.0e-3/3.14*[2.,2.,0.2])
+        self.Kw = np.array(2.0e-3/3.14*[2.,2.,0.2])
         #
         # Hints:
         #   1. Start by tuning the gains for takeoff and hover, then the circular trajectory.
@@ -274,6 +274,52 @@ class CrazyflieGeometricController(rclpy.node.Node):
     #     ...
     #     return f_z, tau
 
+    def geometric_controller(self, p_d, v_d, a_d, yaw_d):
+
+        # Errors
+        e_p = self.position - p_d
+        e_v = self.velocity - v_d
+
+        # Desired total force in the inertial (Or I guess world) frame
+        F_des = (-self.Kp*e_p - self.Kv*e_v + self.m*self.g*self.e3 + self.m *a_d)
+
+        # Desired body z-axis
+        b3_d = F_des / np.linalg.norm(F_des)
+
+        # Desired heading from yaw
+        b1_c = np.array([
+                        np.cos(yaw_d),
+                        np.sin(yaw_d),
+                        0.0])
+
+        # Desired rot matrix R_d
+        b2_d = np.cross(b3_d, b1_c)
+        b2_d = b2_d / np.linalg.norm(b2_d)
+
+        b1_d = np.cross(b2_d, b3_d)
+
+        R_d = np.column_stack((b1_d, b2_d, b3_d))
+
+        # Attitude Error
+        e_R_matrix = 0.5* (R_d.T @ self.R_WB - self.R_WB.T @ R_d)
+        e_R = np.array([e_R_matrix[2,1], e_R_matrix[0,2], e_R_matrix[1,0]])
+
+        # Angular velocity error
+        e_w = self.omega_B
+
+        # Collective Thrust
+        f_z = F_des @ (self.R_WB @ self.e3)
+
+        # Body Torque
+        tau = (-self.KR*e_R - self.Kw*e_w + np.cross(self.omega_B, self.J @ self.omega_B))
+
+        # Saturation
+        f_z = np.clip(f_z, 0.0, self.max_thrust)
+
+        tau = np.clip(tau, -self.max_torque, self.max_torque)
+
+        return f_z, tau
+
 
     # [TODO] PART 6: Implement the cmd_force_torque function to publish the force-torque commands.
     # Instructions:
@@ -336,6 +382,23 @@ class CrazyflieGeometricController(rclpy.node.Node):
         # Once the landing is finished (flight_mode == 'land' and t > 2*self.land_duration), send a zero
         # command to stop the motors, and set self.flight_mode = 'idle' and self.is_flying = False.
 
+        # stop once landing is complete
+        if self.flight_mode == 'land' and t > 2*self.land_duration:
+
+            self.cmd_force_torque(0.0, np.zeros(3))
+
+            self.flight_mode = 'idle'
+            self.is_flying = False
+
+            return
+
+        # desired reference
+        p_d, v_d, a_d, yaw_d = self.navigator(t)
+
+        # activate geo controller
+        f_z, tau = self.geometric_controller(p_d, v_d, a_d, yaw_d)
+
+        self.cmd_force_torque(f_z, tau)
 
         if self.plot_trajectory:
             self.publish_reference_path(t)
