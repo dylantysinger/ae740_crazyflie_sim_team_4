@@ -83,8 +83,6 @@ class CrazyflieGeometricController(rclpy.node.Node):
 
         self.get_logger().info('Initialization completed...')
 
-        self.O_B_A = np.array([[1, 0, 0],[0, 1, 0],[0, 0, 1]])
-
         ############################################################################################################
         # [TODO] PART 2: Add ROS2 subscribers for the Crazyflie state data, and publishers for the control command
         #                and the reference trajectory
@@ -213,10 +211,11 @@ class CrazyflieGeometricController(rclpy.node.Node):
             omega = np.array([0,0,0.75 * np.tanh(0.1*t)]) #rad/s
             omegaDot = np.array([0.75 * 0.1 * np.sech(0.1*t)^2]) #rad/s/s
 
-            self.O_B_A = np.array[[np.cos(theta),-np.sin(theta),0],[np.sin(theta),np.cos(theta),0],[0,0,1]]
+            O_B_A = np.array([[np.cos(theta),np.sin(theta),0],[-np.sin(theta),np.cos(theta),0],[0,0,1]])
 
-            rQuadWRTCenterInB = np.array([-a,0,0])
-            p = self.trajectory_start_position - np.transpose(self.O_B_A) @ rQuadWRTCenterInB
+            rQuadWRTCenterInB = np.array([a,0,0])
+            rCenterWRTOriginInA = self.trajectory_start_position - rQuadWRTCenterInB
+            p = np.transpose(O_B_A) @ rQuadWRTCenterInB + rCenterWRTOriginInA
 
             pxr = p[0]
             pyr = p[1]
