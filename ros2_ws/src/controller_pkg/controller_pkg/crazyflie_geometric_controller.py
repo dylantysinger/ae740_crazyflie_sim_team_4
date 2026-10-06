@@ -83,6 +83,7 @@ class CrazyflieGeometricController(rclpy.node.Node):
 
         self.get_logger().info('Initialization completed...')
 
+        self.O_B_A = np.array([[1, 0, 0],[0, 1, 0],[0, 0, 1]])
 
         ############################################################################################################
         # [TODO] PART 2: Add ROS2 subscribers for the Crazyflie state data, and publishers for the control command
@@ -205,16 +206,43 @@ class CrazyflieGeometricController(rclpy.node.Node):
     # - Keep the reference yaw angle yawr = 0.
     # - Return [pxr, pyr, pzr, vxr, vyr, vzr, axr, ayr, azr, yawr].
 
-    # def trajectory_function(self, t):
-    #     if self.trajectory_type == 'horizontal_circle':
-    #       pxr =
-    #       pyr =
-    #       ...
-    #       yawr =
+    def trajectory_function(self, t):
+        if self.trajectory_type == 'horizontal_circle':
+            a = 1.0 #m
+            theta = 10*np.log(np.abs(np.cosh(0.1*t)))
+            omega = np.array([0,0,0.75 * np.tanh(0.1*t)]) #rad/s
+            omegaDot = np.array([0.75 * 0.1 * np.sech(0.1*t)^2]) #rad/s/s
 
-    #     return np.array([pxr,pyr,pzr,vxr,vyr,vzr,axr,ayr,azr,yawr])
+            self.O_B_A = np.array[[np.cos(theta),-np.sin(theta),0],[np.sin(theta),np.cos(theta),0],[0,0,1]]
 
+            rQuadWRTCenterInB = np.array([-a,0,0])
+            p = self.trajectory_start_position - np.transpose(self.O_B_A) @ rQuadWRTCenterInB
 
+            pxr = p[0]
+            pyr = p[1]
+            pzr = p[2]
+
+            # Transport theorem
+            v = self.supercross(omega) @ p
+            vxr = v[0]
+            vyr = v[1]
+            vzr = v[2]
+
+            # Double transport theorem
+            a = self.supercross(omegaDot) @ p + self.supercross(omega) @ v
+            axr = a[0]
+            ayr = a[1]
+            azr = a[2]
+
+            yawr = 0.0
+
+            return np.array([pxr,pyr,pzr,vxr,vyr,vzr,axr,ayr,azr,yawr])
+        else:
+            return np.array([0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0])
+
+    def supercross(self, a):
+        super = np.array([[0, -a[3], a[2]],[a[3], 0,-a[1]],[-a[2],a[1],0]])
+        return super
     def navigator(self, t):
         # Returns the desired p^W_d, v^W_d, p_ddot^W_d and yaw psi at time t
         if self.flight_mode == 'takeoff' or self.flight_mode == 'land':
@@ -228,6 +256,8 @@ class CrazyflieGeometricController(rclpy.node.Node):
             ref = self.trajectory_function(t)
         else:   # hover
             ref = np.array([*self.go_to_position, 0., 0., 0., 0., 0., 0., 0.])
+
+        self.tLast = t
         return ref[0:3], ref[3:6], ref[6:9], ref[9]
 
 
