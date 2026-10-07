@@ -285,10 +285,10 @@ class CrazyflieGeometricController(rclpy.node.Node):
         e_v = self.velocity - v_d
 
         # Desired total force in the inertial (Or I guess world) frame
-        F_des = -(-self.Kp*e_p - self.Kv*e_v - self.m*self.g*self.e3 + self.m *a_d)
+        F_des = (-self.Kp*e_p - self.Kv*e_v - self.m*self.g*self.e3 + self.m *a_d)
 
         # Desired body z-axis
-        b3_d = F_des / np.linalg.norm(F_des)
+        b3_d = - F_des / np.linalg.norm(F_des)
 
         # Desired heading from yaw
         b1_c = np.array([
@@ -312,7 +312,7 @@ class CrazyflieGeometricController(rclpy.node.Node):
         e_w = self.omega_B 
 
         # Collective Thrust
-        f_z = F_des @ (self.R_WB @ self.e3)
+        f_z = - F_des @ (self.R_WB @ self.e3)
 
         # Body Torque
         tau = (-self.KR*e_R - self.Kw*e_w + np.cross(self.omega_B, self.J @ self.omega_B))
