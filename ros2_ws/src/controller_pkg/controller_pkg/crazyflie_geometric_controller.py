@@ -42,13 +42,13 @@ class CrazyflieGeometricController(rclpy.node.Node):
         #
         # Each gain is a numpy array of size 3 (one gain per axis):
         # - self.Kp -> position gain         (N/m),      axes (x, y, z) of the world frame
-        self.Kp = 0.*np.array([0.,0.,1.])
+        self.Kp = np.array([0.,0.,0.1])
         # - self.Kv -> velocity gain         (N s/m),    axes (x, y, z) of the world frame
         self.Kv = np.array([0.,0.,0.])
         # - self.KR -> attitude gain         (Nm/rad),   axes (x, y, z) of the body frame
-        self.KR = 2.0e-3/3.14*np.array([1.,1.,0.1])
+        self.KR = 8.0e-3*np.array([1.,1.,0.1])
         # - self.Kw -> angular velocity gain (Nm s/rad), axes (x, y, z) of the body frame
-        self.Kw = 2.0e-3/3.14*np.array([2.,2.,0.2])
+        self.Kw = 8.0e-3*np.array([1.,1.,0.1])
 
         #
         # Hints:
@@ -285,7 +285,7 @@ class CrazyflieGeometricController(rclpy.node.Node):
         e_v = self.velocity - v_d
 
         # Desired total force in the inertial (Or I guess world) frame
-        F_des = (-self.Kp*e_p - self.Kv*e_v + self.m*self.g*self.e3 + self.m *a_d)
+        F_des = -(-self.Kp*e_p - self.Kv*e_v - self.m*self.g*self.e3 + self.m *a_d)
 
         # Desired body z-axis
         b3_d = F_des / np.linalg.norm(F_des)
@@ -309,7 +309,7 @@ class CrazyflieGeometricController(rclpy.node.Node):
         e_R = np.array([e_R_matrix[2,1], e_R_matrix[0,2], e_R_matrix[1,0]])
 
         # Angular velocity error
-        e_w = self.omega_B
+        e_w = self.omega_B 
 
         # Collective Thrust
         f_z = F_des @ (self.R_WB @ self.e3)
