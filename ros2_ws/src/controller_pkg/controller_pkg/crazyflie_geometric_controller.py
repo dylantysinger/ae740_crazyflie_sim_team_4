@@ -42,13 +42,14 @@ class CrazyflieGeometricController(rclpy.node.Node):
         #
         # Each gain is a numpy array of size 3 (one gain per axis):
         # - self.Kp -> position gain         (N/m),      axes (x, y, z) of the world frame
-        self.Kp = np.array(0*[0.,0.,1.])
+        self.Kp = 0.*np.array([0.,0.,1.])
         # - self.Kv -> velocity gain         (N s/m),    axes (x, y, z) of the world frame
         self.Kv = np.array([0.,0.,0.])
         # - self.KR -> attitude gain         (Nm/rad),   axes (x, y, z) of the body frame
-        self.KR = np.array(2.0e-3/3.14*[1.,1.,0.1])
+        self.KR = 2.0e-3/3.14*np.array([1.,1.,0.1])
         # - self.Kw -> angular velocity gain (Nm s/rad), axes (x, y, z) of the body frame
-        self.Kw = np.array(2.0e-3/3.14*[2.,2.,0.2])
+        self.Kw = 2.0e-3/3.14*np.array([2.,2.,0.2])
+
         #
         # Hints:
         #   1. Start by tuning the gains for takeoff and hover, then the circular trajectory.
@@ -107,11 +108,11 @@ class CrazyflieGeometricController(rclpy.node.Node):
         # topic name -> {prefix}/force_torque_cmd
         # publisher variable -> self.force_torque_pub
 
-        self.position_sub       = self.create_subscription(PoseStamped, f'/{prefix}/pose', self._pose_msg_callback, 10)
-        self.velocity_sub       = self.create_subscription(TwistStamped, f'/{prefix}/twist', self._twist_msg_callback, 10)
+        self.position_sub       = self.create_subscription(PoseStamped, f'{prefix}/pose', self._pose_msg_callback, 10)
+        self.velocity_sub       = self.create_subscription(TwistStamped, f'{prefix}/twist', self._twist_msg_callback, 10)
 
-        self.reference_path_pub = self.create_publisher(Path, f'/{prefix}/geo_reference_path', 10)
-        self.force_torque_pub   = self.create_publisher(ForceTorqueCmd, f'/{prefix}/force_torque_cmd', 10)
+        self.reference_path_pub = self.create_publisher(Path, f'{prefix}/geo_reference_path', 10)
+        self.force_torque_pub   = self.create_publisher(ForceTorqueCmd, f'{prefix}/force_torque_cmd', 10)
 
 
         self.takeoffService = self.create_subscription(Empty, f'/all/geo_takeoff', self.takeoff, 10)
@@ -206,15 +207,17 @@ class CrazyflieGeometricController(rclpy.node.Node):
 
     def trajectory_function(self, t):
         if self.trajectory_type == 'horizontal_circle':
-            a = 1.0 #m
-            theta = 10*np.log(np.abs(np.cosh(0.1*t)))
+            radius = 1.0 #m
+            theta = 0.75*10.0*np.log(np.abs(np.cosh(0.1*t)))
             omega = np.array([0,0,0.75 * np.tanh(0.1*t)]) #rad/s
-            omegaDot = np.array([0.75 * 0.1 * np.sech(0.1*t)^2]) #rad/s/s
+            omegaDot = np.array([0, 0, 0.75 * 0.1 / np.cosh(0.1*t)**2]) #rad/s/s
 
             O_B_A = np.array([[np.cos(theta),np.sin(theta),0],[-np.sin(theta),np.cos(theta),0],[0,0,1]])
 
-            rQuadWRTCenterInB = np.array([a,0,0])
+            rQuadWRTCenterInB = np.array([radius,0,0])
             rCenterWRTOriginInA = self.trajectory_start_position - rQuadWRTCenterInB
+            r = O_B_A.T @ rQuadWRTCenterInB
+
             p = np.transpose(O_B_A) @ rQuadWRTCenterInB + rCenterWRTOriginInA
 
             pxr = p[0]
@@ -222,13 +225,13 @@ class CrazyflieGeometricController(rclpy.node.Node):
             pzr = p[2]
 
             # Transport theorem
-            v = self.supercross(omega) @ p
+            v = self.supercross(omega) @ r 
             vxr = v[0]
             vyr = v[1]
             vzr = v[2]
 
             # Double transport theorem
-            a = self.supercross(omegaDot) @ p + self.supercross(omega) @ v
+            a = self.supercross(omegaDot) @ r + self.supercross(omega) @ v
             axr = a[0]
             ayr = a[1]
             azr = a[2]
@@ -240,8 +243,9 @@ class CrazyflieGeometricController(rclpy.node.Node):
             return np.array([0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0])
 
     def supercross(self, a):
-        super = np.array([[0, -a[3], a[2]],[a[3], 0,-a[1]],[-a[2],a[1],0]])
+        super = np.array([[0, -a[2], a[1]],[a[2], 0,-a[0]],[-a[1],a[0],0]])
         return super
+
     def navigator(self, t):
         # Returns the desired p^W_d, v^W_d, p_ddot^W_d and yaw psi at time t
         if self.flight_mode == 'takeoff' or self.flight_mode == 'land':
