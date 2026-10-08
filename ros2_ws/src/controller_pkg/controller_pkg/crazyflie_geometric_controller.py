@@ -42,13 +42,13 @@ class CrazyflieGeometricController(rclpy.node.Node):
         #
         # Each gain is a numpy array of size 3 (one gain per axis):
         # - self.Kp -> position gain         (N/m),      axes (x, y, z) of the world frame
-        self.Kp = np.array([0.,0.,0.1])
+        self.Kp = np.array([0.15,0.15,0.25])
         # - self.Kv -> velocity gain         (N s/m),    axes (x, y, z) of the world frame
-        self.Kv = np.array([0.,0.,0.])
+        self.Kv = np.array([0.1,0.1,0.1])
         # - self.KR -> attitude gain         (Nm/rad),   axes (x, y, z) of the body frame
         self.KR = 8.0e-3*np.array([1.,1.,0.1])
         # - self.Kw -> angular velocity gain (Nm s/rad), axes (x, y, z) of the body frame
-        self.Kw = 8.0e-3*np.array([1.,1.,0.1])
+        self.Kw = 6.0e-4*np.array([1.,1.,0.1])
 
         #
         # Hints:
@@ -285,10 +285,10 @@ class CrazyflieGeometricController(rclpy.node.Node):
         e_v = self.velocity - v_d
 
         # Desired total force in the inertial (Or I guess world) frame
-        F_des = (-self.Kp*e_p - self.Kv*e_v - self.m*self.g*self.e3 + self.m *a_d)
+        F_des = (-self.Kp*e_p - self.Kv*e_v + self.m*self.g*self.e3 + self.m *a_d)
 
         # Desired body z-axis
-        b3_d = - F_des / np.linalg.norm(F_des)
+        b3_d = F_des / np.linalg.norm(F_des)
 
         # Desired heading from yaw
         b1_c = np.array([
@@ -312,7 +312,7 @@ class CrazyflieGeometricController(rclpy.node.Node):
         e_w = self.omega_B 
 
         # Collective Thrust
-        f_z = - F_des @ (self.R_WB @ self.e3)
+        f_z = F_des @ (self.R_WB @ self.e3)
 
         # Body Torque
         tau = (-self.KR*e_R - self.Kw*e_w + np.cross(self.omega_B, self.J @ self.omega_B))
@@ -406,6 +406,12 @@ class CrazyflieGeometricController(rclpy.node.Node):
 
         if self.plot_trajectory:
             self.publish_reference_path(t)
+
+        self.get_logger().info(
+            f'mode={self.flight_mode} t={t:.1f} '
+            f'pos={np.round(self.position,3)} p_d={np.round(p_d,3)} '
+            f'vel={np.round(self.velocity,3)} f_z={f_z:.3f} tau={np.round(tau,6)}',
+            throttle_duration_sec=0.5)
 
 def main():
     rclpy.init()
