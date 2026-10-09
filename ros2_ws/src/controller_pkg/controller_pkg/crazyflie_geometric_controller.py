@@ -239,6 +239,36 @@ class CrazyflieGeometricController(rclpy.node.Node):
             yawr = 0.0
 
             return np.array([pxr,pyr,pzr,vxr,vyr,vzr,axr,ayr,azr,yawr])
+
+        elif self.trajectory_type == 'wavy_circle':
+
+            
+            r = 1.0 # Radius of circle
+            omega = 0.5 # angular velocity
+            A = 0.3 # Vertical oscillation amplitude
+            n = 2 # number of oscillations per revolution
+
+            x0, y0, z0 = self.trajectory_start_position
+
+            # Position
+            pxr = x0 + r*(np.cos(omega*t) - 1) # I think this needs a -1 to start the reference at x0,y0,z0
+            pyr = y0 + r*np.sin(omega*t)
+            pzr = z0 + A*np.sin(n*omega*t)
+
+            # Velocity
+            vxr = -r*omega*np.sin(omega*t)
+            vyr = r*omega*np.cos(omega*t)
+            vzr = A*n*omega*np.cos(n*omega*t)
+
+            # Acceleration
+            axr = -r*omega**2*np.cos(omega*t)
+            ayr = -r*omega**2*np.sin(omega*t)
+            azr = -A*(n*omega)**2*np.sin(n*omega*t)
+
+            yawr = 0.0
+
+            return np.array([pxr,pyr,pzr,vxr,vyr,vzr,axr,ayr,azr,yawr])
+        
         else:
             return np.array([0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0])
 
