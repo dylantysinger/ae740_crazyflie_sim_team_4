@@ -55,10 +55,10 @@ class CrazyflieGeometricController(rclpy.node.Node):
         # self.KR = 1e-3 * np.array([2.0, 2.0, 3])
         # self.Kw = 2e-4 * np.array([1.0, 1.0, 1.5])
 
-        self.Kp = np.array([0.01, 0.01, 0.2])
-        self.Kv = np.array([0.01, 0.01, 0.2])
-        self.KR = 2e-3 * np.array([2.0, 2.0, 1.0])
-        self.Kw = 4e-4 * np.array([1.0, 1.0, 0.5])
+        self.Kp = np.array([0.05, 0.05, 0.1])
+        self.Kv = np.array([0.01, 0.01, 0.05])
+        self.KR = 1e-3 * np.array([2.0, 2.0, 1.0])
+        self.Kw = 2e-4 * np.array([1.0, 1.0, 0.5])
 
         #
         # Hints:
@@ -82,7 +82,7 @@ class CrazyflieGeometricController(rclpy.node.Node):
 
         self.flight_mode = 'idle'
         self.trajectory_t0 = self.get_clock().now()
-        self.trajectory_type = 'horizontal_circle'
+        self.trajectory_type = 'wavy_circle'
         self.plot_trajectory = True
 
         self.takeoff_duration = 5.0
@@ -360,8 +360,7 @@ class CrazyflieGeometricController(rclpy.node.Node):
         # e_w = np.clip(e_w,-5,5)
 
         # Collective Thrust
-        f_z = np.dot(F_des,(self.R_WB @ self.e3))
-
+        f_z = F_des @ (self.R_WB @ self.e3)
         # Body Torqsue
         tau = (-self.KR*e_R -self.Kw*e_w + np.cross(self.omega_B, self.J @ self.omega_B))
 
