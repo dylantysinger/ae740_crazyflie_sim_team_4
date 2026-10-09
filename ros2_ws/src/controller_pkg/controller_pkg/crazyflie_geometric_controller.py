@@ -42,13 +42,23 @@ class CrazyflieGeometricController(rclpy.node.Node):
         #
         # Each gain is a numpy array of size 3 (one gain per axis):
         # - self.Kp -> position gain         (N/m),      axes (x, y, z) of the world frame
-        self.Kp = np.array([0.15,0.15,0.25])
-        # - self.Kv -> velocity gain         (N s/m),    axes (x, y, z) of the world frame
-        self.Kv = np.array([0.1,0.1,0.1])
-        # - self.KR -> attitude gain         (Nm/rad),   axes (x, y, z) of the body frame
-        self.KR = 8.0e-3*np.array([1.,1.,0.1])
-        # - self.Kw -> angular velocity gain (Nm s/rad), axes (x, y, z) of the body frame
-        self.Kw = 6.0e-4*np.array([1.,1.,0.1])
+        # self.Kp = np.array([0.05,0.05,0.05])
+        # # - self.Kv -> velocity gain         (N s/m),    axes (x, y, z) of the world frame
+        # self.Kv = np.array([0.01,0.01,0.05])
+        # # - self.KR -> attitude gain         (Nm/rad),   axes (x, y, z) of the body frame
+        # self.KR = 1.0e-4*np.array([2.,2.,2])
+        # # - self.Kw -> angular velocity gain (Nm s/rad), axes (x, y, z) of the body frame
+        # self.Kw = 5.0e-4*np.array([1.,1.,1])
+        #Hover
+        # self.Kp = np.array([0.01, 0.01, 0.2])
+        # self.Kv = np.array([0, 0, 0.1])
+        # self.KR = 1e-3 * np.array([2.0, 2.0, 3])
+        # self.Kw = 2e-4 * np.array([1.0, 1.0, 1.5])
+
+        self.Kp = np.array([0.01, 0.01, 0.2])
+        self.Kv = np.array([0.01, 0.01, 0.2])
+        self.KR = 2e-3 * np.array([2.0, 2.0, 1.0])
+        self.Kw = 4e-4 * np.array([1.0, 1.0, 0.5])
 
         #
         # Hints:
@@ -150,8 +160,10 @@ class CrazyflieGeometricController(rclpy.node.Node):
         euler = np.array(tf_transformations.euler_from_quaternion(q))
         self.attitude = (euler+np.pi) % (2*np.pi) - np.pi
 
+        #print("euler0",euler[0])
+        #print("euler1",euler[1])
+        #print("euler2",euler[2])
         self.R_WB = tf_transformations.euler_matrix(euler[0], euler[1], euler[2]) [:3, :3]
-
         # return # remove this statement after finishing this part
 
 
@@ -159,8 +171,11 @@ class CrazyflieGeometricController(rclpy.node.Node):
         v = msg.twist.linear
         v_B = np.array([v.x, v.y, v.z])
 
+        #print("v_B",v_B)
+
         omega = msg.twist.angular
 
+        #print("omega",omega)
         self.velocity = self.R_WB @ v_B
         self.omega_B  = np.deg2rad(np.array([omega.x, omega.y, omega.z]))
 
@@ -225,13 +240,13 @@ class CrazyflieGeometricController(rclpy.node.Node):
             pzr = p[2]
 
             # Transport theorem
-            v = self.supercross(omega) @ r 
+            v = np.cross(omega, r)
             vxr = v[0]
             vyr = v[1]
             vzr = v[2]
 
             # Double transport theorem
-            a = self.supercross(omegaDot) @ r + self.supercross(omega) @ v
+            a = np.cross(omegaDot, r) + np.cross(omega, v)
             axr = a[0]
             ayr = a[1]
             azr = a[2]
@@ -242,7 +257,7 @@ class CrazyflieGeometricController(rclpy.node.Node):
 
         elif self.trajectory_type == 'wavy_circle':
 
-            
+
             r = 1.0 # Radius of circle
             omega = 0.5 # angular velocity
             A = 0.3 # Vertical oscillation amplitude
@@ -268,13 +283,9 @@ class CrazyflieGeometricController(rclpy.node.Node):
             yawr = 0.0
 
             return np.array([pxr,pyr,pzr,vxr,vyr,vzr,axr,ayr,azr,yawr])
-        
+
         else:
             return np.array([0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0])
-
-    def supercross(self, a):
-        super = np.array([[0, -a[2], a[1]],[a[2], 0,-a[0]],[-a[1],a[0],0]])
-        return super
 
     def navigator(self, t):
         # Returns the desired p^W_d, v^W_d, p_ddot^W_d and yaw psi at time t
@@ -313,9 +324,14 @@ class CrazyflieGeometricController(rclpy.node.Node):
         # Errors
         e_p = self.position - p_d
         e_v = self.velocity - v_d
+        # e_p = np.clip(e_p,-1.0,1.0)
+        # e_v = np.clip(e_v,-10.0,10.0)
 
         # Desired total force in the inertial (Or I guess world) frame
         F_des = (-self.Kp*e_p - self.Kv*e_v + self.m*self.g*self.e3 + self.m *a_d)
+
+        # F_des[0] = np.clip(F_des[0],-0.1,0.1)
+        # F_des[1] = np.clip(F_des[1],-0.1,0.1)
 
         # Desired body z-axis
         b3_d = F_des / np.linalg.norm(F_des)
@@ -329,7 +345,6 @@ class CrazyflieGeometricController(rclpy.node.Node):
         # Desired rot matrix R_d
         b2_d = np.cross(b3_d, b1_c)
         b2_d = b2_d / np.linalg.norm(b2_d)
-
         b1_d = np.cross(b2_d, b3_d)
 
         R_d = np.column_stack((b1_d, b2_d, b3_d))
@@ -339,19 +354,39 @@ class CrazyflieGeometricController(rclpy.node.Node):
         e_R = np.array([e_R_matrix[2,1], e_R_matrix[0,2], e_R_matrix[1,0]])
 
         # Angular velocity error
-        e_w = self.omega_B 
+        e_w = self.omega_B
+
+        # e_R = np.clip(e_R,-0.2,0.2)
+        # e_w = np.clip(e_w,-5,5)
 
         # Collective Thrust
-        f_z = F_des @ (self.R_WB @ self.e3)
+        f_z = np.dot(F_des,(self.R_WB @ self.e3))
 
-        # Body Torque
-        tau = (-self.KR*e_R - self.Kw*e_w + np.cross(self.omega_B, self.J @ self.omega_B))
+        # Body Torqsue
+        tau = (-self.KR*e_R -self.Kw*e_w + np.cross(self.omega_B, self.J @ self.omega_B))
+
+        #print("b1_d:",b1_d)
+        #print("b2_d:",b2_d)
+        #print("b3_d:",b3_d)
+        #print("R_WB:",self.R_WB)
+        #print("R_d:",R_d)
+        #print("e_R_matrix:",e_R_matrix)
+        #print("e_R:",e_R)
+        #print("e_w:",e_w)
+        #print("tau:",tau)
+        #print("e_p:",e_p)
+        #print("e_v:",e_v)
+        #print("a_d:",a_d)
+        #print("F_des:",F_des)
+        #print("f_z:",f_z)
 
         # Saturation
         f_z = np.clip(f_z, 0.0, self.max_thrust)
 
         tau = np.clip(tau, -self.max_torque, self.max_torque)
 
+        #print("tauSat:",tau)
+        #print("f_zSat:",f_z)
         return f_z, tau
 
 
