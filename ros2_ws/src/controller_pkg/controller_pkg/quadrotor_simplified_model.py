@@ -50,8 +50,21 @@ class QuadrotorSimplified:
         # .
         # vzdot = ...
 
+        pxdot = vx
+        pydot = vy
+        pzdot = vz
 
-        # Linear first-order attitude dymamics
+        # 321 Euler Angle matrix O3(phi)*O2(theta)*O1(psi) Eq 2.13.5 transposed in GKSD
+
+        # phi = roll
+        # theta = pitch
+        # psi = yaw
+
+        vxdot = (thrust/self.mass)*(cos(roll)*sin(pitch)*cos(yaw) + sin(roll)*sin(yaw))
+        vydot = (thrust/self.mass)*(cos(roll)*sin(pitch)*sin(yaw) - sin(roll)*cos(yaw))
+        vzdot = (thrust/self.mass)*(cos(roll)*cos(pitch)) - self.gravity
+
+        # Linear first-order attitude dymamics (GIVEN)
         rolldot = (roll_c - roll) / self.tau
         pitchdot = (pitch_c - pitch) / self.tau
         yawdot = (yaw_c - yaw) / self.tau
