@@ -296,7 +296,8 @@ class CrazyflieMPC(rclpy.node.Node):
         #   2. Remember that self.position etc. are all python lists (not numpy arrays)
         #   3. Use the solve_mpc() method from the mpc_solver object, see the function in the tracking_mpc.py file
 
-
+        x0 = np.array([self.position,self.velocity,self.attitude])
+        status, x_mpc, u_mpc = self.mpc_solver.solve_mpc(x0,trajectory,trajectory[self.mpc_N])
         self.control_queue = deque(u_mpc)
 
         if self.plot_trajectory:
