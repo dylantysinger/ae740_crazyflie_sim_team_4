@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# AE 740 Lab 3 - Team 4 simulator launcher
+# AE 740 Lab 4 - Team 4 simulator launcher
 # Opens Terminator with a tmux 2x2 layout:
 #   Gazebo | Crazyswarm2
 #   Controller | Flight commands
 set -euo pipefail
 
 ROOT="$HOME/ae740_2026/ae740_crazyflie_sim_team_4"
-SESSION="ae740_lab3"
+SESSION="ae740_lab4"
 
 for command in terminator tmux; do
     if ! command -v "$command" >/dev/null 2>&1; then
@@ -15,7 +15,8 @@ for command in terminator tmux; do
     fi
 done
 
-for required in "$ROOT/ae740_venv/bin/activate" \
+for required in "/opt/ros/humble/setup.bash" \
+                "$ROOT/ae740_venv/bin/activate" \
                 "$ROOT/ros2_ws/install/setup.bash" \
                 "$ROOT/crazyflie-firmware/tools/crazyflie-simulation/simulator_files/gazebo/launch/sitl_target_tracking.sh"; do
     if [[ ! -f "$required" ]]; then
@@ -33,20 +34,21 @@ fi
 # fixes established for this machine's user-level setuptools/NumPy conflicts.
 setup="cd '$ROOT' && source ae740_venv/bin/activate && source /opt/ros/humble/setup.bash && source ros2_ws/install/setup.bash && export PYTHONNOUSERSITE=1 && export PYTHONPATH=\"\$VIRTUAL_ENV/lib/python3.10/site-packages:\$PYTHONPATH\""
 
-# Create a detached session, then split into four panes.
-tmux new-session -d -s "$SESSION" -n lab3
+# Create a detached session, then split into four equal panes.
+# No 'select-layout tiled': these splits already give an even 2x2 grid,
+# and tiled would reorder the panes by index (Gazebo|Controller / Server|Commands).
+tmux new-session -d -s "$SESSION" -n lab4
 pane_gazebo="$(tmux display-message -p -t "$SESSION:0" '#{pane_id}')"
 pane_server="$(tmux split-window -h -P -F '#{pane_id}' -t "$pane_gazebo")"
 pane_controller="$(tmux split-window -v -P -F '#{pane_id}' -t "$pane_gazebo")"
 pane_commands="$(tmux split-window -v -P -F '#{pane_id}' -t "$pane_server")"
-tmux select-layout -t "$SESSION:0" tiled
 
 # Enter setup commands in all panes.
 for pane in "$pane_gazebo" "$pane_server" "$pane_controller" "$pane_commands"; do
     tmux send-keys -t "$pane" "$setup" C-m
 done
 
-# Start in course-recommended order; delays allow launch processes to begin.
+# Start in course-recommended order; delays keep the output easy to follow.
 # Always check server/controller output before issuing takeoff.
 tmux send-keys -t "$pane_gazebo" "printf '\\n=== GAZEBO SITL ===\\n'; cd '$ROOT/crazyflie-firmware' && bash tools/crazyflie-simulation/simulator_files/gazebo/launch/sitl_target_tracking.sh -t 0 -p 1 -m crazyflie" C-m
 sleep 8
