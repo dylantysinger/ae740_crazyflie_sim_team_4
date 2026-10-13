@@ -66,6 +66,17 @@ class TrajectoryTrackingMpc:
         # max_X = ... [m]
         # max_Y = ... [m]
 
+        Q = np.identity(nx)
+        R = np.identity(nu)
+        W = block_diag(Q,R)
+
+        max_angle = np.radians(60)
+        max_thrust = 0.55
+        max_height = 1.5
+        max_velocity = 1
+        max_X = 1.5
+        max_Y = 1.5
+
         ocp.cost.cost_type = 'LINEAR_LS'
         ocp.cost.Vx = np.vstack([np.identity(nx), np.zeros((nu,nx))])
         ocp.cost.Vu = np.vstack([np.zeros((nx,nu)), np.identity(nu)])
