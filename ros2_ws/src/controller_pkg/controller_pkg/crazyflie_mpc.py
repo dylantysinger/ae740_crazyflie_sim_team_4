@@ -137,7 +137,7 @@ class CrazyflieMPC(rclpy.node.Node):
         quaternion = msg.pose.orientation
         q = [quaternion.x, quaternion.y, quaternion.z, quaternion.w]
         euler = np.array(tf_transformations.euler_from_quaternion(q))
-        self.attitude = ((euler+np.pi) % (2*np.pi) - np.pi).to_list()
+        self.attitude = ((euler+np.pi) % (2*np.pi) - np.pi).tolist()
         self.R_WB = tf_transformations.euler_matrix(euler[0], euler[1], euler[2]) [:3, :3]
 
 
@@ -146,7 +146,7 @@ class CrazyflieMPC(rclpy.node.Node):
         v_B = np.array([v.x, v.y, v.z])
         omega = msg.twist.angular
         
-        self.velocity = (self.R_WB @ v_B).to_list()
+        self.velocity = (self.R_WB @ v_B).tolist()
         self.omega_B  = np.deg2rad(np.array([omega.x, omega.y, omega.z]))
 
 
