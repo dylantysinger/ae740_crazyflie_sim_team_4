@@ -147,7 +147,7 @@ class CrazyflieMPC(rclpy.node.Node):
         omega = msg.twist.angular
         
         self.velocity = (self.R_WB @ v_B).tolist()
-        self.omega_B  = np.deg2rad(np.array([omega.x, omega.y, omega.z]))
+        self.omega_B  = (np.deg2rad(np.array([omega.x, omega.y, omega.z]))).tolist()
 
 
     def start_trajectory(self, msg):
