@@ -102,7 +102,7 @@ class TrajectoryTrackingMpc:
 
         ocp.code_gen_options.code_export_directory = str(self.acados_generated_files_path / 'c_generated_code')
         
-        # json_file = str(self.acados_generated_files_path / ('acados_ocp.json'))
+        json_file = str(self.acados_generated_files_path / ('acados_ocp.json'))
         # solver options
         ocp.solver_options.qp_solver = 'PARTIAL_CONDENSING_HPIPM'
         ocp.solver_options.hessian_approx = 'GAUSS_NEWTON'
