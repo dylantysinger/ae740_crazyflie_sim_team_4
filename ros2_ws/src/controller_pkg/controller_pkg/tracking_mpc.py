@@ -112,7 +112,8 @@ class TrajectoryTrackingMpc:
         ocp.solver_options.qp_solver_iter_max = 30
         ocp.solver_options.print_level = 0
 
-        AcadosOcpSolver.generate(ocp, json_file=json_file)
+        ocp.json_file = json_file
+        AcadosOcpSolver.generate(ocp)
         AcadosOcpSolver.build(ocp.code_export_directory, with_cython=True)
 
         if self.acados_generated_files_path.is_dir():
