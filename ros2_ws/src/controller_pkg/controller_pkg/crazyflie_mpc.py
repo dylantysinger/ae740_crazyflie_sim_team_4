@@ -133,31 +133,21 @@ class CrazyflieMPC(rclpy.node.Node):
     #   3. Be sure to wrap the attitude angles between -pi to +pi.
 
     def _pose_msg_callback(self, msg: PoseStamped):
-
         self.position = np.array([msg.pose.position.x, msg.pose.position.y, msg.pose.position.z])
-
         quaternion = msg.pose.orientation
         q = [quaternion.x, quaternion.y, quaternion.z, quaternion.w]
         euler = np.array(tf_transformations.euler_from_quaternion(q))
-        self.attitude = (euler+np.pi) % (2*np.pi) - np.pi
-
-        #print("euler0",euler[0])
-        #print("euler1",euler[1])
-        #print("euler2",euler[2])
+        self.attitude = ((euler+np.pi) % (2*np.pi) - np.pi).to_list()
         self.R_WB = tf_transformations.euler_matrix(euler[0], euler[1], euler[2]) [:3, :3]
 
 
     def _twist_msg_callback(self, msg: TwistStamped):
         v = msg.twist.linear
         v_B = np.array([v.x, v.y, v.z])
-
-        #print("v_B",v_B)
-
         omega = msg.twist.angular
-
-        #print("omega",omega)
-        self.velocity = self.R_WB @ v_B
-        #self.omega_B  = np.deg2rad(np.array([omega.x, omega.y, omega.z]))
+        
+        self.velocity = (self.R_WB @ v_B).to_list()
+        self.omega_B  = np.deg2rad(np.array([omega.x, omega.y, omega.z]))
 
 
     def start_trajectory(self, msg):
@@ -296,8 +286,10 @@ class CrazyflieMPC(rclpy.node.Node):
         #   2. Remember that self.position etc. are all python lists (not numpy arrays)
         #   3. Use the solve_mpc() method from the mpc_solver object, see the function in the tracking_mpc.py file
 
-        x0 = np.array([self.position,self.velocity,self.attitude])
-        status, x_mpc, u_mpc = self.mpc_solver.solve_mpc(x0,trajectory,trajectory[self.mpc_N])
+        x0 = np.concatenate([self.position,self.velocity,self.attitude])
+        yref = trajectory[:, :self.mpc_N]
+        yref_e = trajectory[:,-1]
+        status, x_mpc, u_mpc = self.mpc_solver.solve_mpc(x0, yref, yref_e)
         self.control_queue = deque(u_mpc)
 
         if self.plot_trajectory:
