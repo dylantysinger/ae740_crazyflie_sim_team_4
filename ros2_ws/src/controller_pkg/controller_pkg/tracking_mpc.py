@@ -100,7 +100,9 @@ class TrajectoryTrackingMpc:
         # initial state
         ocp.constraints.x0 = np.zeros(9)
 
-        json_file = str(self.acados_generated_files_path / ('acados_ocp.json'))
+        ocp.code_gen_options.code_export_directory = str(self.acados_generated_files_path / 'c_generated_code')
+        
+        # json_file = str(self.acados_generated_files_path / ('acados_ocp.json'))
         # solver options
         ocp.solver_options.qp_solver = 'PARTIAL_CONDENSING_HPIPM'
         ocp.solver_options.hessian_approx = 'GAUSS_NEWTON'
@@ -112,9 +114,9 @@ class TrajectoryTrackingMpc:
         ocp.solver_options.qp_solver_iter_max = 30
         ocp.solver_options.print_level = 0
 
-        ocp.json_file = json_file
+        ocp.code_gen_options.json_file = json_file
         AcadosOcpSolver.generate(ocp)
-        AcadosOcpSolver.build(ocp.code_export_directory, with_cython=True)
+        AcadosOcpSolver.build(ocp.code_gen_options.code_export_directory, with_cython=True)
 
         if self.acados_generated_files_path.is_dir():
             sys.path.append(str(self.acados_generated_files_path))
