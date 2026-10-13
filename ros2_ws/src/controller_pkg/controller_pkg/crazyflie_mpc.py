@@ -98,8 +98,9 @@ class CrazyflieMPC(rclpy.node.Node):
         self.mpc_solution_path_pub = self.create_publisher(Path, f'{prefix}/mpc_solution_path', 10)
         self.attitude_setpoint_pub   = self.create_publisher(AttitudeSetpoint, f'{prefix}/cmd_attitude_setpoint', 10)
 
-
-
+        self.reference_path_pub = self.create_publisher(Path, f'{prefix}/mpc_reference_path', 10)
+        self.full_ref = None
+        
         self.takeoffService = self.create_subscription(Empty, f'/all/mpc_takeoff', self.takeoff, 10)
         self.landService = self.create_subscription(Empty, f'/all/mpc_land', self.land, 10)
         self.trajectoryService = self.create_subscription(Empty, f'/all/mpc_trajectory', self.start_trajectory, 10)
@@ -266,6 +267,15 @@ class CrazyflieMPC(rclpy.node.Node):
 
         if self.trajectory_changed:
             self.trajectory_start_position = self.position
+            if self.flight_mode == 'trajectory':
+                self.full_ref = Path()
+                self.full_ref.header.frame_id = 'world'
+                for t_s in np.linspace(0, 2*np.pi/0.1, 200):
+                    p = self.trajectory_function(t_s)
+                    pose = PoseStamped()
+                    pose.header.frame_id = 'world'
+                    pose.pose.position.x, pose.pose.position.y, pose.pose.position.z = float(p[0]), float(p[1]), float(p[2])
+                    self.full_ref.poses.append(pose)
             self.trajectory_t0 = self.get_clock().now()
             self.trajectory_changed = False
 
@@ -305,6 +315,9 @@ class CrazyflieMPC(rclpy.node.Node):
                 mpc_solution_path.poses.append(mpc_pose)
 
             self.mpc_solution_path_pub.publish(mpc_solution_path)
+            if self.full_ref is not None:
+                self.full_ref.header.stamp = mpc_solution_path.header.stamp
+                self.reference_path_pub.publish(self.full_ref)
 
     def _main_loop(self):
         if self.flight_mode == 'idle':
