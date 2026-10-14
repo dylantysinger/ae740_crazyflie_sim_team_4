@@ -66,16 +66,19 @@ class TrajectoryTrackingMpc:
         # max_X = ... [m]
         # max_Y = ... [m]
 
-        Q = np.identity(nx)
-        R = np.identity(nu)
+        #           [ px , py , pz , vx , vy , vz , p , q , r ]
+        Q = np.diag([ 1 , 1 , 1 , 1 , 1 , 0.1 , 0.8 , 0.8 , 1 ])
+        #     [ roll_cmd , pitch_cmd , yaw_rat_cmd , thrust ]
+        R = np.diag([ 0.5 , 0.5 , 1 , 2 ])
+
         W = block_diag(Q,R)
 
         max_angle = np.radians(60)
         max_thrust = 0.55
-        max_height = 1.5
-        max_velocity = 1
-        max_X = 1.5
-        max_Y = 1.5
+        max_height = 5
+        max_velocity = 5
+        max_X = 5
+        max_Y = 5
 
         ocp.cost.cost_type = 'LINEAR_LS'
         ocp.cost.Vx = np.vstack([np.identity(nx), np.zeros((nu,nx))])
@@ -101,7 +104,7 @@ class TrajectoryTrackingMpc:
         ocp.constraints.x0 = np.zeros(9)
 
         ocp.code_gen_options.code_export_directory = str(self.acados_generated_files_path / 'c_generated_code')
-        
+
         json_file = str(self.acados_generated_files_path / ('acados_ocp.json'))
         # solver options
         ocp.solver_options.qp_solver = 'PARTIAL_CONDENSING_HPIPM'

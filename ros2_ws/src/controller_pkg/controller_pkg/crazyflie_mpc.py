@@ -100,7 +100,7 @@ class CrazyflieMPC(rclpy.node.Node):
 
         self.reference_path_pub = self.create_publisher(Path, f'{prefix}/mpc_reference_path', 10)
         self.full_ref = None
-        
+
         self.takeoffService = self.create_subscription(Empty, f'/all/mpc_takeoff', self.takeoff, 10)
         self.landService = self.create_subscription(Empty, f'/all/mpc_land', self.land, 10)
         self.trajectoryService = self.create_subscription(Empty, f'/all/mpc_trajectory', self.start_trajectory, 10)
@@ -146,7 +146,7 @@ class CrazyflieMPC(rclpy.node.Node):
         v = msg.twist.linear
         v_B = np.array([v.x, v.y, v.z])
         omega = msg.twist.angular
-        
+
         self.velocity = (self.R_WB @ v_B).tolist()
         self.omega_B  = (np.deg2rad(np.array([omega.x, omega.y, omega.z]))).tolist()
 
@@ -178,7 +178,7 @@ class CrazyflieMPC(rclpy.node.Node):
         self.flight_mode = 'land'
         self.go_to_position = np.array([self.position[0],
                                         self.position[1],
-                                        0.1])
+                                        0.05])
 
 
     # [TODO] PART 4: Implement the trajectory type 'horizontal_circle' starting at self.trajectory_start_position.
@@ -193,8 +193,8 @@ class CrazyflieMPC(rclpy.node.Node):
     def trajectory_function(self, t):
         if self.trajectory_type == 'horizontal_circle':
             radius = 1.0 #m
-            theta = 0.1*t
-            omega = np.array([0,0,0.1]) #rad/s
+            theta = 0.75*10.0*np.log(np.abs(np.cosh(0.1*t)))
+            omega = np.array([0,0,0.75 * np.tanh(0.1*t)]) #rad/s
 
             O_B_A = np.array([[np.cos(theta),np.sin(theta),0],[-np.sin(theta),np.cos(theta),0],[0,0,1]])
 
@@ -296,6 +296,11 @@ class CrazyflieMPC(rclpy.node.Node):
         #   2. Remember that self.position etc. are all python lists (not numpy arrays)
         #   3. Use the solve_mpc() method from the mpc_solver object, see the function in the tracking_mpc.py file
 
+        # stop once landing is complete
+        if self.flight_mode == 'land' and t > 2*self.land_duration:
+            self.flight_mode = 'idle'
+            self.is_flying = False
+
         x0 = np.concatenate([self.position,self.velocity,self.attitude])
         yref = trajectory[:, :self.mpc_N]
         yref_e = trajectory[:,-1]
@@ -321,6 +326,7 @@ class CrazyflieMPC(rclpy.node.Node):
 
     def _main_loop(self):
         if self.flight_mode == 'idle':
+            self.cmd_attitude_setpoint(0.,0.,0.,0)
             return
 
         if not self.position or not self.velocity or not self.attitude:

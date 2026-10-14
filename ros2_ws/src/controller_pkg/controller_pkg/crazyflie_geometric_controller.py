@@ -82,7 +82,7 @@ class CrazyflieGeometricController(rclpy.node.Node):
 
         self.flight_mode = 'idle'
         self.trajectory_t0 = self.get_clock().now()
-        self.trajectory_type = 'wavy_circle'
+        self.trajectory_type = 'horizontal_circle'
         self.plot_trajectory = True
 
         self.takeoff_duration = 5.0
