@@ -1,7 +1,7 @@
 from acados_template import AcadosOcp, AcadosOcpSolver, AcadosModel
 import numpy as np
 import casadi as cs
-from casadi import SX, vertcat, horzcat, diag, inv_minor, cross, sqrt,  cos, sin, norm_2, tanh, GenMX_zeros
+from casadi import SX, vertcat, horzcat, diag, inv_minor, cross, sqrt,  cos, sin, norm_2, tanh
 from scipy.linalg import block_diag
 from .quadrotor_simplified_model import QuadrotorSimplified
 from threading import Thread
@@ -146,7 +146,7 @@ class SSIMpc:
         ocp = AcadosOcp()
         ocp.model = model
 
-        ocp.code_export_directory = self.acados_generated_files_path / ('c_generated_code')
+        ocp.code_export_directory = str(self.acados_generated_files_path / ('c_generated_code'))
         nx = model.x.size()[0] # number of states
         nu = model.u.size()[0] # number of controls
         ny = nx + nu  # size of intermediate cost reference vector in least squares objective
@@ -232,8 +232,9 @@ class SSIMpc:
         ocp.solver_options.nlp_solver_max_iter = 20
         ocp.solver_options.qp_solver_iter_max = 30
         ocp.solver_options.print_level = 0
-        
-        AcadosOcpSolver.generate(ocp, json_file=json_file)
+        ocp.code_gen_options.json_file = json_file
+
+        AcadosOcpSolver.generate(ocp)
         AcadosOcpSolver.build(ocp.code_export_directory, with_cython=True)
 
         if self.acados_generated_files_path.is_dir():

@@ -9,6 +9,7 @@ from pathlib import Path
 import importlib
 import sys
 
+
 class TrajectoryTrackingMpc:
     def __init__(self, name: str, quadrotor: QuadrotorSimplified, horizon: float, num_steps: int, code_export_directory : Path=Path('acados_generated_files')):
         self.model_name = name

@@ -6,6 +6,7 @@ import rclpy.node
 
 from .quadrotor_simplified_model import QuadrotorSimplified
 from .ssi_mpc import SSIMpc
+from .run_logger import RunLogger
 
 from crazyflie_interfaces.msg import AttitudeSetpoint
 
@@ -71,6 +72,7 @@ class CrazyflieMPC(rclpy.node.Node):
         self.lr = 0.1
         self.kernel = 'Gaussian'
         self.kernel_std = 1.0
+        self.rng = np.random.default_rng(seed=0)
 
         # Input mask decides what features to use amongst the available ones
         self.input_mask = [0,1,2,3,4,5,6,7,8] # takes the features at the given indices
@@ -96,6 +98,8 @@ class CrazyflieMPC(rclpy.node.Node):
         self.last_time_stamp = None
         self.current_time_stamp = None
         ####
+
+        self.logger_csv = RunLogger('ssi_mpc')
 
         self.get_logger().info('Initialization completed...')
 
@@ -132,11 +136,11 @@ class CrazyflieMPC(rclpy.node.Node):
         self.reference_path_pub = self.create_publisher(Path, f'{prefix}/mpc_reference_path', 10)
         self.full_ref = None
 
-        self.takeoffService = self.create_subscription(Empty, f'/all/mpc_takeoff', self.takeoff, 10)
-        self.landService = self.create_subscription(Empty, f'/all/mpc_land', self.land, 10)
-        self.trajectoryService = self.create_subscription(Empty, f'/all/mpc_trajectory', self.start_trajectory, 10)
-        self.hoverService = self.create_subscription(Empty, f'/all/mpc_hover', self.hover, 10)
-        self.teleopService = self.create_subscription(Empty, f'/all/mpc_teleop', self.teleop, 10)
+        self.takeoffService = self.create_subscription(Empty, f'/all/ssi_takeoff', self.takeoff, 10)
+        self.landService = self.create_subscription(Empty, f'/all/ssi_land', self.land, 10)
+        self.trajectoryService = self.create_subscription(Empty, f'/all/ssi_trajectory', self.start_trajectory, 10)
+        self.hoverService = self.create_subscription(Empty, f'/all/ssi_hover', self.hover, 10)
+        self.teleopService = self.create_subscription(Empty, f'/all/ssi_teleop', self.teleop, 10)
 
 
         # Main control loop running at self.rate (Hz)
@@ -167,8 +171,9 @@ class CrazyflieMPC(rclpy.node.Node):
         # self.n_rf \isdef the number of random features
         # self.b \in U(0,2pi)^{n_rf \times 1}
 
-        self.omega = np.random.Generator.normal(loc=0.0, scale=self.kernel_std, size=(self.n_rf, len(self.input_mask))
-        self.b = np.random.Generator.uniform(low=0.0, high=2*np.pi, size=(self.n_rf, 1))
+        
+        self.omega = self.rng.normal(loc=0.0, scale=self.kernel_std, size=(self.n_rf, len(self.input_mask)))
+        self.b = self.rng.uniform(low=0.0, high=2*np.pi, size=(self.n_rf, 1))
 
         return
 
@@ -253,7 +258,6 @@ class CrazyflieMPC(rclpy.node.Node):
 
             rQuadWRTCenterInB = np.array([radius,0,0])
             rCenterWRTOriginInA = self.trajectory_start_position - rQuadWRTCenterInB
-            r = O_B_A.T @ rQuadWRTCenterInB
 
             p = np.transpose(O_B_A) @ rQuadWRTCenterInB + rCenterWRTOriginInA
 
@@ -263,6 +267,25 @@ class CrazyflieMPC(rclpy.node.Node):
 
             # Transport theorem
             v = np.cross(omega, r)
+            vxr = v[0]
+            vyr = v[1]
+            vzr = v[2]
+
+            return np.array([pxr,pyr,pzr,vxr,vyr,vzr,0.,0.,0.])
+        if self.trajectory_type == 'lemniscate':
+            a = 0.5 #m
+            omega = 0.75 #rad/s
+           
+            frac = a / (1 + np.sin(omega*t)**2)
+            p = self.trajectory_start_position + np.array([np.cos(omega*t)*frac - a, np.sin(omega*t)*np.cos(omega*t)*frac, 0]).T
+            frac2 = frac * omega / (1 + np.sin(omega*t)**2)
+            v = np.array([-frac2*(np.sin(omega*t)*(3-np.sin(omega*t)**2)), frac2*(1-3*np.sin(omega*t)**2), 0]).T
+
+            pxr = p[0]
+            pyr = p[1]
+            pzr = p[2]
+
+            # Transport theorem
             vxr = v[0]
             vyr = v[1]
             vzr = v[2]
@@ -359,6 +382,10 @@ class CrazyflieMPC(rclpy.node.Node):
         x0 = np.concatenate([self.position,self.velocity,self.attitude])
         yref = trajectory[:, :self.mpc_N]
         yref_e = trajectory[:,-1]
+
+        if self.flight_mode == 'trajectory' and t <= 10.0:
+            self.logger_csv.log(t, x0, trajectory[:,0])
+
         status, x_mpc, u_mpc = self.mpc_solver.solve_mpc(x0, yref, yref_e, dt)
         self.control_queue = deque(u_mpc)
 

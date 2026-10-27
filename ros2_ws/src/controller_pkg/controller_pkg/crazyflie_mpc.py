@@ -6,6 +6,7 @@ import rclpy.node
 
 from .quadrotor_simplified_model import QuadrotorSimplified
 from .tracking_mpc import TrajectoryTrackingMpc
+from .run_logger import RunLogger
 
 from crazyflie_interfaces.msg import AttitudeSetpoint
 
@@ -65,6 +66,8 @@ class CrazyflieMPC(rclpy.node.Node):
 
         self.control_queue = None
         self.is_flying = False
+        
+        self.logger_csv = RunLogger('tracking_mpc')
 
         self.get_logger().info('Initialization completed...')
 
@@ -304,6 +307,10 @@ class CrazyflieMPC(rclpy.node.Node):
         x0 = np.concatenate([self.position,self.velocity,self.attitude])
         yref = trajectory[:, :self.mpc_N]
         yref_e = trajectory[:,-1]
+        
+        if self.flight_mode =='trajectory' and t <= 10.0:
+            self.logger_csv.log(t, x0, trajectory[:,0])
+
         status, x_mpc, u_mpc = self.mpc_solver.solve_mpc(x0, yref, yref_e)
         self.control_queue = deque(u_mpc)
 
@@ -345,6 +352,10 @@ class CrazyflieMPC(rclpy.node.Node):
                                     np.degrees(control[1]),
                                     yawrate,
                                     thrust_pwm)
+
+    def destroy_node(self):
+        self.logger_csv.close()
+        super().destroy_node()
 
 def main():
     rclpy.init()
