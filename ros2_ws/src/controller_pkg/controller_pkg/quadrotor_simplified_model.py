@@ -3,7 +3,7 @@ import numpy as np
 
 class QuadrotorSimplified:
     def __init__(self, mass, arm_length, Ixx, Iyy, Izz, tau, gravity=9.80665):
-        self.mass = mass
+        self.mass = mass * 1.4
         self.gravity = gravity
         self.arm_length = arm_length
         self.Ixx = Ixx

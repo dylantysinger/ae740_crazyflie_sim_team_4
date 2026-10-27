@@ -20,7 +20,7 @@
     <atmosphere type='adiabatic'/>
     <!-- Add wind disturbance here -->
     <wind>
-      <linear_velocity>1 1 0.5</linear_velocity>
+      <linear_velocity>1 1 00.5</linear_velocity>
     </wind>
     <!-- Other Code -->
     <scene>
