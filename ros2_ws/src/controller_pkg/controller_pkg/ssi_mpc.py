@@ -89,7 +89,43 @@ class SSIMpc:
         #   self.x and self.u because of the definition of self.rf in the __init__().  
         
 
-        
+        # Define variables used in the model
+
+        # Euler angles
+        roll  = self.e[0]
+        pitch = self.e[1]
+        yaw   = self.e[2]
+
+        # Control inputs
+        roll_c   = self.u[0]
+        pitch_c  = self.u[1]
+        yaw_rate = self.u[2]
+        thrust   = self.u[3]
+
+        # Quadrotor parameters
+        m   = self.quad.mass
+        g   = self.quad.gravity
+        tau = self.quad.tau
+
+        # Position dynamics
+        p_dot = self.v
+
+        # Model used in MPC in the previous labs
+        # Translational dynamics
+        v_dot = cs.vertcat(
+            (thrust/m)*(cs.cos(yaw)*cs.sin(pitch)*cs.cos(roll)
+                        + cs.sin(yaw)*cs.sin(roll)),
+            (thrust/m)*(cs.sin(yaw)*cs.sin(pitch)*cs.cos(roll)
+                        - cs.cos(yaw)*cs.sin(roll)),
+            (thrust/m)*cs.cos(pitch)*cs.cos(roll) - g
+        )
+
+        # Attitude dynamics
+        e_dot = cs.vertcat(
+            (roll_c - roll)/tau,
+            (pitch_c - pitch)/tau,
+            yaw_rate
+        )
 
         return cs.vertcat(p_dot, v_dot, e_dot) + cs.vertcat(cs.mtimes(self.alpha, self.rf))
 
@@ -234,13 +270,37 @@ class SSIMpc:
         # [...intermediate steps...]
         # alpha_out = ... 
         
+        # Algorithm 1
 
+        # Step 1
+        Z = np.concatenate((x_in, u_in))
+        z = self.Bz @ Z
 
-        # log latest values
+        rf = (1 / np.sqrt(self.n_rf)) * np.cos(self.omega @ z + np.asarray(self.b).flatten())
+
+        # Step 5: Observe next state and calculate unknown dynamics
+        f_nom = np.array(self.f(x_in, u_in, np.zeros_like(alpha_in))).flatten()
+
+        h_obs = (x_now - x_in) / dt - f_nom
+
+        # Step 6: Calculate estimation loss
+        h_pred = alpha_in @ rf
+
+        error = h_obs - h_pred
+
+        # Step 7: Calculate gradient
+        gradient = -2 * np.outer(error, rf)
+
+        # Step 8: Gradient descent update
+        alpha_out = alpha_in - self.learning_rate * gradient
+
+        # Log latest values
         self.alpha_last = np.copy(alpha_out)
-        self.x_last = np.copy(x_now) # for the next iteration
+        self.x_last = np.copy(x_now)
 
         return
+
+
 
 
     def solve_mpc(self, x0, yref, yref_e, dt):
