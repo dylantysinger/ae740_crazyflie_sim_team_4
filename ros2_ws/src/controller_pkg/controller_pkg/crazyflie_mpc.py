@@ -192,7 +192,7 @@ class CrazyflieMPC(rclpy.node.Node):
 
     def trajectory_function(self, t):
         if self.trajectory_type == 'horizontal_circle':
-            radius = 1.0 #m
+            radius = 0.5 #m
             theta = 0.75*10.0*np.log(np.abs(np.cosh(0.1*t)))
             omega = np.array([0,0,0.75 * np.tanh(0.1*t)]) #rad/s
 

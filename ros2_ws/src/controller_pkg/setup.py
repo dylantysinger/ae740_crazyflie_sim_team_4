@@ -22,6 +22,7 @@ setup(
         'console_scripts': [
             'crazyflie_geometric_controller = controller_pkg.crazyflie_geometric_controller:main',
             'crazyflie_mpc_controller = controller_pkg.crazyflie_mpc:main', # [LAB 5]
+            'crazyflie_ssi_controller = controller_pkg.crazyflie_ssi_mpc_node:main', # [LAB 6]
         ],
     },
 )
