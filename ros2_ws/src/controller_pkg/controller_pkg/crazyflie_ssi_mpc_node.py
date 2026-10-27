@@ -164,6 +164,11 @@ class CrazyflieMPC(rclpy.node.Node):
         #
         # self.omega = ...
         # self.b = ...
+        # self.n_rf \isdef the number of random features
+        # self.b \in U(0,2pi)^{n_rf \times 1}
+
+        self.omega = np.random.Generator.normal(loc=0.0, scale=self.kernel_std, size=(self.n_rf, len(self.input_mask))
+        self.b = np.random.Generator.uniform(low=0.0, high=2*np.pi, size=(self.n_rf, 1))
 
         return
 
