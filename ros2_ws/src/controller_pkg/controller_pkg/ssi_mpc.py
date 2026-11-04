@@ -103,7 +103,7 @@ class SSIMpc:
         thrust   = self.u[3]
 
         # Quadrotor parameters
-        m   = self.quad.mass * 1.4
+        m   = self.quad.mass
         g   = self.quad.gravity
         tau = self.quad.tau
 
