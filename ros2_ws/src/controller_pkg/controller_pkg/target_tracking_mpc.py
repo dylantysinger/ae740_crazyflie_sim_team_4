@@ -71,7 +71,7 @@ class CrazyflieMPC(rclpy.node.Node):
         self.land_duration = 5.0
 
         acados_c_generated_code_path = pathlib.Path(get_package_share_directory('controller_pkg')).resolve() / 'acados_generated_files'
-        self.mpc_solver = TrajectoryTrackingMpc('crazyflie', quadrotor_dynamics, mpc_tf, mpc_N, code_export_directory=acados_c_generated_code_path)
+        self.mpc_solver = TrajectoryTrackingMpc(f'crazyflie_name', quadrotor_dynamics, mpc_tf, mpc_N, code_export_directory=f"acados_c_generated_code_path_{name}")
         self.mpc_solver.generate_mpc()
 
         self.control_queue = None
