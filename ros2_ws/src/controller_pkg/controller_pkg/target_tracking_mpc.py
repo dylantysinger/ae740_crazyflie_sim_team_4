@@ -49,16 +49,16 @@ class CrazyflieMPC(rclpy.node.Node):
         self.position = []
         self.velocity = []
         self.attitude = []
-		self.target_position = []
-		self.target_position_last = [0,0,0]
+        self.target_position = []
+        self.target_position_last = [0,0,0]
         self.R_WB = np.eye(3)
 
         self.trajectory_changed = True
 
         self.flight_mode = 'idle'
         self.trajectory_t0 = self.get_clock().now()
-		self.t = self.trajectory_t0
-		self.t_last = self.trajectory_t0
+        self.t = self.trajectory_t0
+        self.t_last = self.trajectory_t0
 
         # [LAB 7] Change the trajectory type to 'target_tracking'
         self.trajectory_type = 'target_tracking'
@@ -163,7 +163,7 @@ class CrazyflieMPC(rclpy.node.Node):
         v = msg.twist.linear
         v_B = np.array([v.x, v.y, v.z])
         omega = msg.twist.angular
-		self.velocity = (self.R_WB @ v_B).tolist()
+        self.velocity = (self.R_WB @ v_B).tolist()
         self.omega_B  = (np.deg2rad(np.array([omega.x, omega.y, omega.z]))).tolist()
 
     # [TODO LAB 7] Implement the target position callback function (use self.target_position variable).
@@ -254,23 +254,23 @@ class CrazyflieMPC(rclpy.node.Node):
             vzr = v[2]
 
             return np.array([pxr,pyr,pzr,vxr,vyr,vzr,0.,0.,0.])
-	    # [TODO LAB 7] Implement the trajectory type 'target_tracking' to follow the target drone.
-	    # Instructions:
-	    # - In the trajectory_function, add a case for 'target_tracking'.
-	    # - Use self.target_position as the target position to follow.
-		elif self.trajectory_type == 'target_tracking':
+        # [TODO LAB 7] Implement the trajectory type 'target_tracking' to follow the target drone.
+        # Instructions:
+        # - In the trajectory_function, add a case for 'target_tracking'.
+        # - Use self.target_position as the target position to follow.
+        elif self.trajectory_type == 'target_tracking':
             pxr = self.target_position[0]
             pyr = self.target_position[1]
             pzr = self.target_position[2]
-			dt = self.t - self.get_clock().now();
-			v = (self.target_position - self.target_position_last)/(self.t-self.t_last)
+            dt = self.t - self.get_clock().now();
+            v = (self.target_position - self.target_position_last)/(self.t-self.t_last)
             vxr = v[0]
             vyr = v[1]
             vzr = v[2]
-			
-			self.target_position_last = self.target_position;
+            
+            self.target_position_last = self.target_position;
             return np.array([pxr,pyr,pzr,vxr,vyr,vzr,0.,0.,0.])
-			
+            
         else:
             return np.array([0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0])
 
@@ -326,7 +326,7 @@ class CrazyflieMPC(rclpy.node.Node):
             self.trajectory_t0 = self.get_clock().now()
             self.trajectory_changed = False
 
-		selt.t_last = self.t;
+        selt.t_last = self.t;
         self.t = (self.get_clock().now() - self.trajectory_t0).nanoseconds / 10.0**9
         trajectory = self.navigator(t)
 
