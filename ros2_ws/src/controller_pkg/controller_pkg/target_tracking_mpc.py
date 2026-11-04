@@ -49,11 +49,16 @@ class CrazyflieMPC(rclpy.node.Node):
         self.position = []
         self.velocity = []
         self.attitude = []
+		self.target_position = []
+		self.target_position_last = [0,0,0]
+        self.R_WB = np.eye(3)
 
         self.trajectory_changed = True
 
         self.flight_mode = 'idle'
         self.trajectory_t0 = self.get_clock().now()
+		self.t = self.trajectory_t0
+		self.t_last = self.trajectory_t0
 
         # [LAB 7] Change the trajectory type to 'target_tracking'
         self.trajectory_type = 'target_tracking'
@@ -104,6 +109,12 @@ class CrazyflieMPC(rclpy.node.Node):
         # topic name -> {target_prefix}/pose 
         # callback -> self._target_pose_msg_callback    
 
+        self.position_sub       = self.create_subscription(PoseStamped, f'{prefix}/pose', self._pose_msg_callback, 10)
+        self.velocity_sub       = self.create_subscription(TwistStamped, f'{prefix}/twist', self._twist_msg_callback, 10)
+        self.target_pose_sub    = self.create_subscription(PoseStamped, f'{target_prefix}/pose', self._target_pose_msg_callback, 10)
+
+        self.mpc_solution_path_pub = self.create_publisher(Path, f'{prefix}/mpc_solution_path', 10)
+        self.attitude_setpoint_pub   = self.create_publisher(AttitudeSetpoint, f'{prefix}/cmd_attitude_setpoint', 10)
 
         
         
@@ -114,6 +125,11 @@ class CrazyflieMPC(rclpy.node.Node):
         self.teleopService = self.create_subscription(Empty, f'/all/mpc_teleop', self.teleop, 10)
 
 
+        # Main control loop running at self.rate (Hz)
+        self.create_timer(1./self.rate, self._main_loop)
+
+        # MPC control loop running at self.rate (Hz)
+        self.create_timer(1./self.rate, self._mpc_solver_loop)
 
         # [TODO] PART 2: Add ROS2 timers for the main control loop (callback -> self._main_loop) and 
         #                the MPC solver loop (self._mpc_solver_loop). This is part of __init__().
@@ -134,16 +150,25 @@ class CrazyflieMPC(rclpy.node.Node):
     #   2. You can use tf_transformations for the conversion into different orientation representations. 
     #   3. Be sure to wrap the attitude angles between -pi to +pi. 
 
-    # def _pose_msg_callback(self, msg: PoseStamped):
-    #   self.position = ...
-    #   self.attitude = ...
-    
-    # def _twist_msg_callback(self, msg: TwistStamped):
-    #   self.velocity = ...
+    def _pose_msg_callback(self, msg: PoseStamped):
+        self.position = np.array([msg.pose.position.x, msg.pose.position.y, msg.pose.position.z]).tolist()
+        quaternion = msg.pose.orientation
+        q = [quaternion.x, quaternion.y, quaternion.z, quaternion.w]
+        euler = np.array(tf_transformations.euler_from_quaternion(q))
+        self.attitude = ((euler+np.pi) % (2*np.pi) - np.pi).tolist()
+        self.R_WB = tf_transformations.euler_matrix(euler[0], euler[1], euler[2]) [:3, :3]
+
+
+    def _twist_msg_callback(self, msg: TwistStamped):
+        v = msg.twist.linear
+        v_B = np.array([v.x, v.y, v.z])
+        omega = msg.twist.angular
+		self.velocity = (self.R_WB @ v_B).tolist()
+        self.omega_B  = (np.deg2rad(np.array([omega.x, omega.y, omega.z]))).tolist()
 
     # [TODO LAB 7] Implement the target position callback function (use self.target_position variable).
-    # def _target_pose_msg_callback(self, msg: PoseStamped):
-    #   self.target_position = ...
+    def _target_pose_msg_callback(self, msg: PoseStamped):
+       self.target_position = np.array([msg.pose.position.x, msg.pose.position.y, msg.pose.position.z]).tolist()
 
 
     def start_trajectory(self, msg):
@@ -173,8 +198,8 @@ class CrazyflieMPC(rclpy.node.Node):
         self.flight_mode = 'land'
         self.go_to_position = np.array([self.position[0],
                                         self.position[1],
-                                        0.1])
-        
+                                        0.05])
+
 
     # [TODO] PART 4: Implement the trajectory type 'horizontal_circle' starting at self.trajectory_start_position.
     # Instructions:
@@ -185,23 +210,69 @@ class CrazyflieMPC(rclpy.node.Node):
     # - Return these values in the output array as [pxr, pyr, pzr, vxr, vyr, vzr, 0., 0., 0.]
     # - The last three values (zeros) are the euler angles (attitude references)
 
-    # def trajectory_function(self, t):
-    #     if self.trajectory_type == 'horizontal_circle':  
-    #       pxr = 
-    #       pyr = 
-    #       ...
-    #       vzr = 
+    def trajectory_function(self, t):
+        if self.trajectory_type == 'horizontal_circle':
+            radius = 0.5 #m
+            theta = 0.75*10.0*np.log(np.abs(np.cosh(0.1*t)))
+            omega = np.array([0,0,0.75 * np.tanh(0.1*t)]) #rad/s
 
-    #     return np.array([pxr,pyr,pzr,vxr,vyr,vzr,0.,0.,0.])
+            O_B_A = np.array([[np.cos(theta),np.sin(theta),0],[-np.sin(theta),np.cos(theta),0],[0,0,1]])
 
-    # [TODO LAB 7] Implement the trajectory type 'target_tracking' to follow the target drone.
-    # Instructions:
-    # - In the trajectory_function, add a case for 'target_tracking'.
-    # - Use self.target_position as the target position to follow.
-    #
-    #     if self.trajectory_type == 'target_tracking':  
-    #         ...
+            rQuadWRTCenterInB = np.array([radius,0,0])
+            rCenterWRTOriginInA = self.trajectory_start_position - rQuadWRTCenterInB
+            r = O_B_A.T @ rQuadWRTCenterInB
 
+            p = np.transpose(O_B_A) @ rQuadWRTCenterInB + rCenterWRTOriginInA
+
+            pxr = p[0]
+            pyr = p[1]
+            pzr = p[2]
+
+            # Transport theorem
+            v = np.cross(omega, r)
+            vxr = v[0]
+            vyr = v[1]
+            vzr = v[2]
+
+            return np.array([pxr,pyr,pzr,vxr,vyr,vzr,0.,0.,0.])
+        elif self.trajectory_type == 'lemniscate':
+            a = 0.5 #m
+            omega = 0.75 #rad/s
+           
+            frac = a / (1 + np.sin(omega*t)**2)
+            p = self.trajectory_start_position + np.array([np.cos(omega*t)*frac - a, np.sin(omega*t)*np.cos(omega*t)*frac, 0]).T
+            frac2 = frac * omega / (1 + np.sin(omega*t)**2)
+            v = np.array([-frac2*(np.sin(omega*t)*(3-np.sin(omega*t)**2)), frac2*(1-3*np.sin(omega*t)**2), 0]).T
+
+            pxr = p[0]
+            pyr = p[1]
+            pzr = p[2]
+
+            # Transport theorem
+            vxr = v[0]
+            vyr = v[1]
+            vzr = v[2]
+
+            return np.array([pxr,pyr,pzr,vxr,vyr,vzr,0.,0.,0.])
+	    # [TODO LAB 7] Implement the trajectory type 'target_tracking' to follow the target drone.
+	    # Instructions:
+	    # - In the trajectory_function, add a case for 'target_tracking'.
+	    # - Use self.target_position as the target position to follow.
+		elif self.trajectory_type == 'target_tracking':
+            pxr = self.target_position[0]
+            pyr = self.target_position[1]
+            pzr = self.target_position[2]
+			dt = self.t - self.get_clock().now();
+			v = (self.target_position - self.target_position_last)/(self.t-self.t_last)
+            vxr = v[0]
+            vyr = v[1]
+            vzr = v[2]
+			
+			self.target_position_last = self.target_position;
+            return np.array([pxr,pyr,pzr,vxr,vyr,vzr,0.,0.,0.])
+			
+        else:
+            return np.array([0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0])
 
     def navigator(self, t):
         if self.flight_mode == 'takeoff':
@@ -228,7 +299,13 @@ class CrazyflieMPC(rclpy.node.Node):
     # - See the structure of the message in 
     #       ae740_crazyflie_sim/ros2_ws/src/crazyswarm2/crazyflie_interfaces/msg/AttitudeSetpoint.msg
     #
-    # def cmd_attitude_setpoint(...
+    def cmd_attitude_setpoint(self, roll, pitch, yaw_rate, thrust):
+        msg = AttitudeSetpoint()
+        msg.roll = roll # [deg]
+        msg.pitch  = pitch # [deg]
+        msg.yaw_rate  = yaw_rate # [deg]
+        msg.thrust  = thrust # [-]
+        self.attitude_setpoint_pub.publish(msg)
 
 
     def thrust_to_pwm(self, collective_thrust: float) -> int:
@@ -249,7 +326,8 @@ class CrazyflieMPC(rclpy.node.Node):
             self.trajectory_t0 = self.get_clock().now()
             self.trajectory_changed = False
 
-        t = (self.get_clock().now() - self.trajectory_t0).nanoseconds / 10.0**9
+		selt.t_last = self.t;
+        self.t = (self.get_clock().now() - self.trajectory_t0).nanoseconds / 10.0**9
         trajectory = self.navigator(t)
 
         # [TODO] PART 6: Load the initial state variable and reference variable for the MPC problem
@@ -266,7 +344,15 @@ class CrazyflieMPC(rclpy.node.Node):
         #   2. Remember that self.position etc. are all python lists (not numpy arrays)
         #   3. Use the solve_mpc() method from the mpc_solver object, see the function in the tracking_mpc.py file
 
+        # stop once landing is complete
+        if self.flight_mode == 'land' and t > 2*self.land_duration:
+            self.flight_mode = 'idle'
+            self.is_flying = False
 
+        x0 = np.concatenate([self.position,self.velocity,self.attitude])
+        yref = trajectory[:, :self.mpc_N]
+        yref_e = trajectory[:,-1]
+        status, x_mpc, u_mpc = self.mpc_solver.solve_mpc(x0, yref, yref_e)
         self.control_queue = deque(u_mpc)
 
         if self.plot_trajectory:
@@ -285,6 +371,7 @@ class CrazyflieMPC(rclpy.node.Node):
 
     def _main_loop(self):
         if self.flight_mode == 'idle':
+            self.cmd_attitude_setpoint(0.,0.,0.,0)
             return
 
         if not self.position or not self.velocity or not self.attitude:
@@ -303,6 +390,10 @@ class CrazyflieMPC(rclpy.node.Node):
                                     np.degrees(control[1]), 
                                     yawrate, 
                                     thrust_pwm)
+
+    def destroy_node(self):
+        self.logger_csv.close()
+        super().destroy_node()
 
 def main():
     rclpy.init()
