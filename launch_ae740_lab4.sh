@@ -5,7 +5,7 @@
 #   Controller | Flight commands
 set -euo pipefail
 
-ROOT="$HOME/ae740_2026/ae740_crazyflie_sim_team_4"
+ROOT="$HOME/git/ae740_crazyflie_sim_team_4"
 SESSION="ae740_lab4"
 
 for command in terminator tmux; do
