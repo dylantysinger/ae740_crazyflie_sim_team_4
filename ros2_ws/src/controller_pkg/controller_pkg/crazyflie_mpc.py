@@ -219,13 +219,12 @@ class CrazyflieMPC(rclpy.node.Node):
 
             return np.array([pxr,pyr,pzr,vxr,vyr,vzr,0.,0.,0.])
         if self.trajectory_type == 'lemniscate':
-            a = 0.5 #m
+            a = 1.0 #m
+            b = 0.5 * np.tanh(0.1*t)
             omega = 0.75 #rad/s
            
-            frac = a / (1 + np.sin(omega*t)**2)
-            p = self.trajectory_start_position + np.array([np.cos(omega*t)*frac - a, np.sin(omega*t)*np.cos(omega*t)*frac, 0]).T
-            frac2 = frac * omega / (1 + np.sin(omega*t)**2)
-            v = np.array([-frac2*(np.sin(omega*t)*(3-np.sin(omega*t)**2)), frac2*(1-3*np.sin(omega*t)**2), 0]).T
+            p = self.trajectory_start_position + a * np.array([np.sin(b*t), np.cos(b*t)*np.sin(b*t),  0]).T
+            v = np.array([a*b*cos(b*t), a*b*cos(2*b*t), 0]).T
 
             pxr = p[0]
             pyr = p[1]
