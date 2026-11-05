@@ -416,7 +416,7 @@ class CrazyflieMPC(rclpy.node.Node):
         # yref = trajectory[:, :self.mpc_N]
         # yref_e = trajectory[:,-1]
         # # SOLVER CALL AT EVERY ITERATION
-        status, x_mpc, u_mpc, yref, yref_e = self.mpc_solver.solve_mpc(x0, yref, yref_e)
+        status, x_mpc, u_mpc, yref, yref_e = self.mpc_solver.solve_mpc(x0, self.target_position, dt)
         self.control_queue = deque(u_mpc)
 
         if self.plot_trajectory:
@@ -467,10 +467,6 @@ class CrazyflieMPC(rclpy.node.Node):
                                     np.degrees(control[1]),
                                     yawrate,
                                     thrust_pwm)
-
-    def destroy_node(self):
-        self.logger_csv.close()
-        super().destroy_node()
 
 def main():
 

@@ -290,21 +290,30 @@ class SelfAdaptiveMPC:
             num_indices = int(self.memory_horizon)
             target_memory_vector = self.target_dense_pose_log[:, start:start+num_indices*step:step].T.flatten()  # shape (memory_horizon*3, )
 
-            # # ... intermediate steps ...
+	        # Step 1
+            Z = np.concatenate([x_in, u_in,target_memory_vector])
+            z = self.Bz @ Z
 
-            alpha_out = ... # updated alpha after one step of RLS update
+            rf = (1 / self.n_rf) * np.cos(self.omega @ z + np.asarray(self.b).flatten())
+
+	        # Step 6: Calculate estimation loss
+            h_pred = alpha_in @ rf
+
+            error = target_now[:3] - h_pred
+
+	        # Step 7: Calculate gradient
+            gradient = -2 * np.outer(error, rf)
+
+	        # Step 8: Gradient descent update
+            alpha_out = alpha_in - self.learning_rate * gradient
 
         if self.predictor_type=='multiple_learners':
             raise NotImplementedError('multiple_learners predictor type not implemented yet')
-
-
 
         # log latest values
         self.alpha_last = np.copy(alpha_out)
         self.x_last = np.copy(x_now) # for the next iteration
         self.target_last = np.copy(target_now) # for the next iteration
-
-        return
 
 
     def get_prediction_error(self):
@@ -338,18 +347,25 @@ class SelfAdaptiveMPC:
 
             # iterate over mpc horizon
             for i in range(self.num_steps):
-                # # ... intermediate steps ...
-                target_next = ...
+                # Step 1
+                Z = np.concatenate([self.x_last, self.u_last,past_memory_vector])
+                z = self.Bz @ Z
 
-                predicted_traj[:,i+1] = ...
-                actual_traj[:,i+1] = ...
-                past_memory_vector = ... # shift by 3 for x,y,z and then add the latest predicted position
+                rf = (1 / self.n_rf) * np.cos(self.omega @ z + np.asarray(self.b).flatten())
+
+                # Step 6: Calculate estimation loss
+                target_next = self.alpha_last @ rf
+
+                predicted_traj[:,i+1] = target_next
+                actual_idx = int((self.num_steps - 1 - i) * self.step_size)
+                actual_traj[:,i+1] = self.target_dense_pose_log[:, actual_idx]
+                past_memory_vector = np.concatenate([target_next, past_memory_vector[:-3]]) # shift by 3 for x,y,z and then add the latest predicted position
 
             # compute error as difference in increments
-            pred_increments = ...
-            actual_increments = ...
+            pred_increments = np.diff(predicted_traj, axis=1)
+            actual_increments = np.diff(actual_traj, axis=1)
             vel_error_matrix = (pred_increments - actual_increments)/self.mpc_dt
-            overall_rms_error = ...  # scalar that depicts how much error in velocity prediction over the mpc horizon
+            overall_rms_error = float(np.sqrt(np.mean(vel_error_matrix**2)))  # scalar that depicts how much error in velocity prediction over the mpc horizon
 
         if self.predictor_type=='multiple_learners':
             raise NotImplementedError('multiple_learners predictor type not implemented yet')
@@ -395,15 +411,22 @@ class SelfAdaptiveMPC:
             # - Note that yref has shape (nx, N) and yref_e has shape (nx, ), where nx=9, hence fill appropriately.
 
             for i in range(N):
-                # # ... intermediate steps ...
-                target_next = ...
-                # # ... intermediate steps ...
-                yref[...] = ...
+
+                # Step 1
+                Z = np.concatenate([self.x_last, self.u_last,target_memory_vector])
+                z = self.Bz @ Z
+
+                rf = (1 / self.n_rf) * np.cos(self.omega @ z + np.asarray(self.b).flatten())
+
+                # Step 6: Calculate estimation loss
+                target_next = self.alpha_last @ rf
+
+                yref[:,i] = target_next
                 target_in = np.copy(target_next)
                 # roll memory vector and update with latest predicted position
-                target_memory_vector = ... # shift by 3 for x,y,z and then add the latest predicted position
-                #
-            yref_e = ... # final predicted target state
+                target_memory_vector = [target_next, target_memory_vector[:-3]] # shift by 3 for x,y,z and then add the latest predicted position
+
+                yref_e = target_next; # final predicted target state
 
 
         if self.predictor_type=='multiple_learners':
