@@ -70,8 +70,8 @@ class CrazyflieMPC(rclpy.node.Node):
         self.takeoff_duration = 5.0
         self.land_duration = 5.0
 
-        acados_c_generated_code_path = pathlib.Path(get_package_share_directory('controller_pkg')).resolve() / 'acados_generated_files'
-        self.mpc_solver = TrajectoryTrackingMpc(f'crazyflie_name', quadrotor_dynamics, mpc_tf, mpc_N, code_export_directory=f"acados_c_generated_code_path_{name}")
+        acados_c_generated_code_path = pathlib.Path(get_package_share_directory('controller_pkg')).resolve() / f'acados_generated_files_{name}'
+        self.mpc_solver = TrajectoryTrackingMpc(f'crazyflie_{name}', quadrotor_dynamics, mpc_tf, mpc_N, code_export_directory=acados_c_generated_code_path)
         self.mpc_solver.generate_mpc()
 
         self.control_queue = None
@@ -236,13 +236,11 @@ class CrazyflieMPC(rclpy.node.Node):
 
             return np.array([pxr,pyr,pzr,vxr,vyr,vzr,0.,0.,0.])
         elif self.trajectory_type == 'lemniscate':
-            a = 0.5 #m
-            omega = 0.75 #rad/s
+            a = 1.0 #m
+            b = 0.5 * np.tanh(0.1*t)
            
-            frac = a / (1 + np.sin(omega*t)**2)
-            p = self.trajectory_start_position + np.array([np.cos(omega*t)*frac - a, np.sin(omega*t)*np.cos(omega*t)*frac, 0]).T
-            frac2 = frac * omega / (1 + np.sin(omega*t)**2)
-            v = np.array([-frac2*(np.sin(omega*t)*(3-np.sin(omega*t)**2)), frac2*(1-3*np.sin(omega*t)**2), 0]).T
+            p = self.trajectory_start_position + a * np.array([np.sin(b*t), np.cos(b*t)*np.sin(b*t),  0]).T
+            v = np.array([a*b*np.cos(b*t), a*b*np.cos(2*b*t), 0]).T
 
             pxr = p[0]
             pyr = p[1]
@@ -262,14 +260,8 @@ class CrazyflieMPC(rclpy.node.Node):
             pxr = self.target_position[0]
             pyr = self.target_position[1]
             pzr = self.target_position[2]
-            dt = self.t - self.get_clock().now();
-            v = (self.target_position - self.target_position_last)/(self.t-self.t_last)
-            vxr = v[0]
-            vyr = v[1]
-            vzr = v[2]
             
-            self.target_position_last = self.target_position;
-            return np.array([pxr,pyr,pzr,vxr,vyr,vzr,0.,0.,0.])
+            return np.array([pxr,pyr,pzr,0.,0.,0.,0.,0.,0.])
             
         else:
             return np.array([0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0])
@@ -326,9 +318,9 @@ class CrazyflieMPC(rclpy.node.Node):
             self.trajectory_t0 = self.get_clock().now()
             self.trajectory_changed = False
 
-        selt.t_last = self.t;
+        self.t_last = self.t;
         self.t = (self.get_clock().now() - self.trajectory_t0).nanoseconds / 10.0**9
-        trajectory = self.navigator(t)
+        trajectory = self.navigator(self.t)
 
         # [TODO] PART 6: Load the initial state variable and reference variable for the MPC problem
         #                   and solve the MPC problem at the current time step
@@ -345,7 +337,7 @@ class CrazyflieMPC(rclpy.node.Node):
         #   3. Use the solve_mpc() method from the mpc_solver object, see the function in the tracking_mpc.py file
 
         # stop once landing is complete
-        if self.flight_mode == 'land' and t > 2*self.land_duration:
+        if self.flight_mode == 'land' and self.t > 2*self.land_duration:
             self.flight_mode = 'idle'
             self.is_flying = False
 
