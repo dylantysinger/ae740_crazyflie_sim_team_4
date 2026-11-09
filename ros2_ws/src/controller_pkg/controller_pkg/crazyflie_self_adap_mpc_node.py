@@ -70,6 +70,7 @@ class CrazyflieMPC(rclpy.node.Node):
         self.opt_dt = self.t_horizon / (self.n_mpc_nodes * self.control_freq_factor)
         self.rate = 1/(self.opt_dt)
         self.n_rf = 50
+        self.rng = np.random.default_rng(seed=0)
 
 
 
@@ -79,50 +80,44 @@ class CrazyflieMPC(rclpy.node.Node):
         #   - You need to initialize all the variables mentioned here, some have been defined
         #   - Uncomment all these variables after filling the values in place of ...
         #
-        # # PREDEFINED VARIABLES
-        # self.mpc_expert_list = []
-        # self.last_selection_time = 0.0
-        # self.selected_expert_idx = 0
+        # PREDEFINED VARIABLES
+        self.mpc_expert_list = []
+        self.last_selection_time = 0.0
+        self.selected_expert_idx = 0
 
-        # # Tuning parameters for the 'AS' module
-        # self.selection_interval = ... # seconds
-        # self.gamma = ... # discount factor for the expert loss update
-        # self.a = ... # scaling factor for the reward function (see paper)
-        # self.eta = ... # learning rate for the expert weight update (see paper)
+        # Tuning parameters for the 'AS' module
+        self.selection_interval = ... # seconds
+        self.gamma = ... # discount factor for the expert loss update
+        self.a = ... # scaling factor for the reward function (see paper)
+        self.eta = ... # learning rate for the expert weight update (see paper)
 
-        # # All the experts go here sequantially by calling self.init_expert() function
+        # All the experts go here sequantially by calling self.init_expert() function
 
-        # name = 'expert_1'
-        # kernel = 'Gaussian' # kernel type, we only use 'Gaussian' for now
-        # kernel_std = ... # standard deviation
-        # lr = ... # learning rate
-        # mh = ... # memory horizon for past target position history
-        # p_type = 'single_learner' # predictor type BONUS PART: 'multiple_learners'
-        # self.init_expert(name, kernel, kernel_std, lr, mh, p_type, quadrotor_dynamics, mpc_N, mpc_tf)
+        name = 'expert_1'
+        kernel = 'Gaussian' # kernel type, we only use 'Gaussian' for now
+        kernel_std = 1 # standard deviation
+        lr = 0.1 # learning rate
+        mh = 5 # memory horizon for past target position history
+        p_type = 'single_learner' # predictor type BONUS PART: 'multiple_learners'
+        self.init_expert(name, kernel, kernel_std, lr, mh, p_type, quadrotor_dynamics, mpc_N, mpc_tf)
 
-        # name = 'expert_2'
-        # kernel = 'Gaussian' # kernel type, we only use 'Gaussian' for now
-        # kernel_std = ... # standard deviation
-        # lr = ... # learning rate
-        # mh = ... # memory horizon for past target position history
-        # p_type = 'single_learner' # predictor type
-        # self.init_expert(name, kernel, kernel_std, lr, mh, p_type, quadrotor_dynamics, mpc_N, mpc_tf)
+        name = 'expert_2'
+        kernel = 'Gaussian' # kernel type, we only use 'Gaussian' for now
+        kernel_std = 1 # standard deviation
+        lr = 0.1 # learning rate
+        mh = 10 # memory horizon for past target position history
+        p_type = 'single_learner' # predictor type
+        self.init_expert(name, kernel, kernel_std, lr, mh, p_type, quadrotor_dynamics, mpc_N, mpc_tf)
 
-        # # numpy array to store the expert error at each update step (at rate 50Hz)
-        # self.expert_error_array = np.zeros(len(self.mpc_expert_list))
-        # self.list_of_expert_error_arrays = [] # a list to store all the expert error arrays over time
+        # numpy array to store the expert error at each update step (at rate 50Hz)
+        self.expert_error_array = np.zeros(len(self.mpc_expert_list))
+        self.list_of_expert_error_arrays = [] # a list to store all the expert error arrays over time
 
-        # # initialize probability distribution over experts
-        # self.P_t = ... # uniform distribution initially, 1D array with size = number of experts
+        # initialize probability distribution over experts
+        self.P_t = np.ones(len(self.mpc_expert_list)) / len(self.mpc_expert_list) # uniform distribution initially, 1D array with size = number of experts
 
-        # # discounted sum of losses for each expert (array)
-        # self.S_t = ... # zeros array initially, 1D array with size = number of experts
-
-
-
-
-
-
+        # discounted sum of losses for each expert (array)
+        self.S_t = np.zeros(len(self.mpc_expert_list)) # zeros array initially, 1D array with size = number of experts
 
 
         self.control_queue = None
@@ -182,9 +177,6 @@ class CrazyflieMPC(rclpy.node.Node):
         self.target_prediction_path_pub    = self.create_publisher(Path,'cf_3/mpc_solution_path',10)
 
 
-
-
-
         # disabling takeoff service because we want to start tracking the target right away
         # self.takeoffService = self.create_subscription(Empty, f'/all/mpc_takeoff', self.takeoff, 10)
         self.landService = self.create_subscription(Empty, f'/all/mpc_land', self.land, 10)
@@ -193,15 +185,13 @@ class CrazyflieMPC(rclpy.node.Node):
         self.teleopService = self.create_subscription(Empty, f'/all/mpc_teleop', self.teleop, 10)
 
 
-        # Main control loop running at self.rate (Hz)
-        self.create_timer(1./self.rate, self._main_loop)
-
-        # MPC control loop running at self.rate (Hz)
-        self.create_timer(1./self.rate, self._mpc_solver_loop)
-
         # [TODO] PART 2: Add ROS2 timers for the main control loop (callback -> self._main_loop) and
         #                the MPC solver loop (self._mpc_solver_loop).
         #  Hint: Keep in mind that the variable self.rate is the control update rate specified in Hz
+        # Main control loop running at self.rate (Hz)
+        self.create_timer(1./self.rate, self._main_loop)
+        # MPC control loop running at self.rate (Hz)
+        self.create_timer(1./self.rate, self._mpc_solver_loop)
 
 
 
@@ -238,11 +228,11 @@ class CrazyflieMPC(rclpy.node.Node):
         #   2. The size of the variables omega = (self.n_rf, n_features).
         #      Length of input mask is the actual number of features used for learning.
         #
-        omega = ...
-        b = ...
-
-
-
+        if kernel == 'Gaussian':
+            omega = self.rng.normal(loc=0.0, scale=kernel_std, size=(self.n_rf, n_features))
+        else:
+            raise Exception("Unknown Kernel Selected")
+        b = self.rng.uniform(low=0.0, high=2*np.pi, size=(self.n_rf, 1))
 
         return omega, b
 
@@ -265,6 +255,7 @@ class CrazyflieMPC(rclpy.node.Node):
         euler = np.array(tf_transformations.euler_from_quaternion(q))
         self.attitude = ((euler+np.pi) % (2*np.pi) - np.pi).tolist()
         self.R_WB = tf_transformations.euler_matrix(euler[0], euler[1], euler[2]) [:3, :3]
+        self.current_time_stamp = msg.header.stamp
 
 
     def _twist_msg_callback(self, msg: TwistStamped):
