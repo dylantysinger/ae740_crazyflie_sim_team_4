@@ -243,7 +243,7 @@ class SelfAdaptiveMPC:
         self.ocp_solver = acados_ocp_solver_pyx.AcadosOcpSolverCython(self.model_name, 'SQP', self.num_steps)
 
     def update_step(self, dt, x_now, target_now):
-
+		target_now = np.asarray(target_now, dtype=float)
         # first call to this function, no past memory
         if self.x_last is None:
             self.x_last = x_now # last state same as current
@@ -375,6 +375,7 @@ class SelfAdaptiveMPC:
 
 
     def solve_mpc(self, x0, target_now, dt):
+		target_now = np.asarray(target_now, dtype=float)
         if self.solver_locked:
             print('mpc solver locked, skipping...')
             return
@@ -421,10 +422,10 @@ class SelfAdaptiveMPC:
                 # Step 6: Calculate estimation loss
                 target_next = self.alpha_last @ rf
 
-                yref[:,i] = target_next
+                yref[:3,i] = target_next
                 target_in = np.copy(target_next)
                 # roll memory vector and update with latest predicted position
-                target_memory_vector = [target_next, target_memory_vector[:-3]] # shift by 3 for x,y,z and then add the latest predicted position
+                target_memory_vector = np.concatenate([target_next, target_memory_vector[:-3]]) # shift by 3 for x,y,z and then add the latest predicted position
 
                 yref_e = target_next; # final predicted target state
 
