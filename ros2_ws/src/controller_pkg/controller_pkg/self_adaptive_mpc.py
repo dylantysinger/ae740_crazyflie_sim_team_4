@@ -298,10 +298,11 @@ class SelfAdaptiveMPC:
 
             rf = (1 / self.n_rf) * np.cos(self.omega @ z + np.asarray(self.b).flatten())
 
+        	h_obs = (target_now[:3] - self.target_last[:3]) / dt
 	        # Step 6: Calculate estimation loss
             h_pred = alpha_in @ rf
 
-            error = target_now[:3] - h_pred
+            error = h_obs - h_pred
 
 	        # Step 7: Calculate gradient
             gradient = -2 * np.outer(error, rf)
