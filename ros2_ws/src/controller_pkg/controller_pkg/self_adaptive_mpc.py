@@ -243,7 +243,7 @@ class SelfAdaptiveMPC:
         self.ocp_solver = acados_ocp_solver_pyx.AcadosOcpSolverCython(self.model_name, 'SQP', self.num_steps)
 
     def update_step(self, dt, x_now, target_now):
-		target_now = np.asarray(target_now, dtype=float)
+        target_now = np.asarray(target_now, dtype=float)
         # first call to this function, no past memory
         if self.x_last is None:
             self.x_last = x_now # last state same as current
@@ -339,8 +339,8 @@ class SelfAdaptiveMPC:
             predicted_traj[:,0] = target_past[:3]
             actual_traj[:,0] = target_past[:3]
 
-            start = int(2*self.num_steps*self.step_size) # starting index for 'past' memory vector
-            # # IMP: this is start vector for memory at the time of 'target_past', so 2*mpc_horizon back
+            start = int(self.num_steps*self.step_size) # starting index for 'past' memory vector
+            # IMP: this is start vector for memory at the time of 'target_past', so 2*mpc_horizon back
             step = int(self.step_size)
             num_indices = int(self.memory_horizon)
             past_memory_vector = self.target_dense_pose_log[:, start:start+num_indices*step:step].T.flatten() # flatten combines row first
@@ -362,10 +362,11 @@ class SelfAdaptiveMPC:
                 past_memory_vector = np.concatenate([target_next, past_memory_vector[:-3]]) # shift by 3 for x,y,z and then add the latest predicted position
 
             # compute error as difference in increments
-            pred_increments = np.diff(predicted_traj, axis=1)
-            actual_increments = np.diff(actual_traj, axis=1)
-            vel_error_matrix = (pred_increments - actual_increments)/self.mpc_dt
-            overall_rms_error = float(np.sqrt(np.mean(vel_error_matrix**2)))  # scalar that depicts how much error in velocity prediction over the mpc horizon
+            pred_increments = np.diff(predicted_traj, axis=1) # 3 x N
+            actual_increments = np.diff(actual_traj, axis=1)  # 3 x N
+            vel_error_matrix = (pred_increments - actual_increments)/self.mpc_dt # 3 x N
+            # As per eq. 40 in the paper
+            overall_rms_error = float(np.sqrt(self.mpc_dt**2 / self.num_steps * np.sum(vel_error_matrix**2)))  # scalar that depicts how much error in velocity prediction over the mpc horizon
 
         if self.predictor_type=='multiple_learners':
             raise NotImplementedError('multiple_learners predictor type not implemented yet')
@@ -375,7 +376,7 @@ class SelfAdaptiveMPC:
 
 
     def solve_mpc(self, x0, target_now, dt):
-		target_now = np.asarray(target_now, dtype=float)
+        target_now = np.asarray(target_now, dtype=float)
         if self.solver_locked:
             print('mpc solver locked, skipping...')
             return
@@ -437,6 +438,8 @@ class SelfAdaptiveMPC:
         # set reference commands as recieved from the main node
         for i in range(N):
             self.ocp_solver.set(i, 'yref', np.array([*yref[:,i], *self.hover_control]))
+        yref_e = np.zeros(nx)
+        yref_e[:3] = target_next
         self.ocp_solver.set(N, 'yref', yref_e)
 
         # set the initial state in the solver
