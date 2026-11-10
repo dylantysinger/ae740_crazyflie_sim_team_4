@@ -48,6 +48,8 @@ class CrazyflieMPC(rclpy.node.Node):
         self.position = []
         self.velocity = []
         self.attitude = []
+        self.R_WB = np.eye(3)
+        self.target_position = None
 
         self.trajectory_changed = True
 
@@ -86,29 +88,45 @@ class CrazyflieMPC(rclpy.node.Node):
         self.selected_expert_idx = 0
 
         # Tuning parameters for the 'AS' module
-        self.selection_interval = ... # seconds
-        self.gamma = ... # discount factor for the expert loss update
-        self.a = ... # scaling factor for the reward function (see paper)
-        self.eta = ... # learning rate for the expert weight update (see paper)
+        self.selection_interval = 0.25 # seconds
+        self.gamma = 0.98 # discount factor for the expert loss update
+        self.a = 4 # scaling factor for the reward function (see paper)
+        self.eta = 0.2 # learning rate for the expert weight update (see paper)
 
         # All the experts go here sequantially by calling self.init_expert() function
-
         name = 'expert_1'
         kernel = 'Gaussian' # kernel type, we only use 'Gaussian' for now
-        kernel_std = 1 # standard deviation
-        lr = 0.1 # learning rate
-        mh = 5 # memory horizon for past target position history
+        kernel_std = 0.1 # standard deviation
+        lr = 0.25 # learning rate
+        mh = 10 # memory horizon for past target position history
         p_type = 'single_learner' # predictor type BONUS PART: 'multiple_learners'
         self.init_expert(name, kernel, kernel_std, lr, mh, p_type, quadrotor_dynamics, mpc_N, mpc_tf)
 
         name = 'expert_2'
         kernel = 'Gaussian' # kernel type, we only use 'Gaussian' for now
-        kernel_std = 1 # standard deviation
+        kernel_std = 1.0 # standard deviation
         lr = 0.1 # learning rate
         mh = 10 # memory horizon for past target position history
         p_type = 'single_learner' # predictor type
         self.init_expert(name, kernel, kernel_std, lr, mh, p_type, quadrotor_dynamics, mpc_N, mpc_tf)
 
+        name = 'expert_3'
+        kernel = 'Gaussian' # kernel type, we only use 'Gaussian' for now
+        kernel_std = 0.1 # standard deviation
+        lr = 0.15 # learning rate
+        mh = 10 # memory horizon for past target position history
+        p_type = 'single_learner' # predictor type
+        self.init_expert(name, kernel, kernel_std, lr, mh, p_type, quadrotor_dynamics, mpc_N, mpc_tf)
+
+        name = 'expert_4'
+        kernel = 'Gaussian' # kernel type, we only use 'Gaussian' for now
+        kernel_std = 1.5 # standard deviation
+        lr = 0.1 # learning rate
+        mh = 10 # memory horizon for past target position history
+        p_type = 'single_learner' # predictor type
+        self.init_expert(name, kernel, kernel_std, lr, mh, p_type, quadrotor_dynamics, mpc_N, mpc_tf)
+
+        
         # numpy array to store the expert error at each update step (at rate 50Hz)
         self.expert_error_array = np.zeros(len(self.mpc_expert_list))
         self.list_of_expert_error_arrays = [] # a list to store all the expert error arrays over time
@@ -262,7 +280,7 @@ class CrazyflieMPC(rclpy.node.Node):
         v = msg.twist.linear
         v_B = np.array([v.x, v.y, v.z])
         omega = msg.twist.angular
-		self.velocity = (self.R_WB @ v_B).tolist()
+        self.velocity = (self.R_WB @ v_B).tolist()
         self.omega_B  = (np.deg2rad(np.array([omega.x, omega.y, omega.z]))).tolist()
 
     #### NEW
@@ -341,12 +359,14 @@ class CrazyflieMPC(rclpy.node.Node):
         #   5. Calculate the loss for each expert based on normalized loss, calculated from
         #      the mean error to reduce the noise at each step (due to update rate of 50Hz)
         #
-        selected_expert_idx = ...  # index of the selected expert to return
+
+        errs = np.array(self.list_of_expert_error_arrays)
+        r_t = np.mean(np.exp(-self.a * errs), axis=0)
+        self.S_t = self.gamma * self.S_t + r_t # Discount previous S_t with gamma
+        self.P_t = np.exp(self.eta * self.S_t) / np.sum(np.exp(self.eta * self.S_t))
+        self.list_of_expert_error_arrays = []
+        selected_expert_idx = int(self.rng.choice(len(self.P_t), p=self.P_t))
         return selected_expert_idx
-
-
-
-
 
     def _mpc_solver_loop(self):
         if not self.is_flying:
@@ -396,8 +416,10 @@ class CrazyflieMPC(rclpy.node.Node):
         #### We want that this does not happen at every iteration of this loop, but rather at a lower frequency
         #### This interval is defined by self.selection_interval variable (0.25 seconds for example)
         #### You will use self.adaptive_expert_selection() function here
-        if ...
-
+        now = self.get_clock().now().nanoseconds / 10.0**9
+        if (now - self.last_selection_time) >= self.selection_interval:
+            self.selected_expert_idx = self.adaptive_expert_selection()
+            self.last_selection_time = now
 
         # stop once landing is complete
         if self.flight_mode == 'land' and t > 2*self.land_duration:
@@ -407,7 +429,7 @@ class CrazyflieMPC(rclpy.node.Node):
         # yref = trajectory[:, :self.mpc_N]
         # yref_e = trajectory[:,-1]
         # # SOLVER CALL AT EVERY ITERATION
-        status, x_mpc, u_mpc, yref, yref_e = self.mpc_solver.solve_mpc(x0, self.target_position, dt)
+        status, x_mpc, u_mpc, yref, yref_e = self.mpc_expert_list[self.selected_expert_idx].solve_mpc(x0, self.target_position, dt)
         self.control_queue = deque(u_mpc)
 
         if self.plot_trajectory:
@@ -442,7 +464,7 @@ class CrazyflieMPC(rclpy.node.Node):
             self.cmd_attitude_setpoint(0.,0.,0.,0)
             return
 
-        if not self.position or not self.velocity or not self.attitude:
+        if not self.position or not self.velocity or not self.attitude or self.target_position is None:
             self.get_logger().warning("Empty state message.")
             return
 
