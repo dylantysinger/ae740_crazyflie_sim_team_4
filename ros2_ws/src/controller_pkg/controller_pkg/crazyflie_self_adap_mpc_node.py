@@ -224,7 +224,7 @@ class CrazyflieMPC(rclpy.node.Node):
 
         omega, b = self.set_random_features(kernel, kernel_std, n_features)
         self.rf_dict = {'n_rf':self.n_rf, 'omega':omega, 'b':b, 'input':input_mask, 'target':target_mask, 'lr':lr, 'mh':mh, 'p_type':p_type}
-        acados_c_generated_code_path = pathlib.Path(get_package_share_directory('controller_pkg')).resolve() / 'acados_generated_files'
+        acados_c_generated_code_path = pathlib.Path(get_package_share_directory('controller_pkg')).resolve() / 'acados_generated_files_self_adap'
         self.mpc_expert_list.append(SelfAdaptiveMPC(name, quadrotor_dynamics, mpc_tf, mpc_N, self.rf_dict, code_export_directory=acados_c_generated_code_path))
         self.mpc_expert_list[-1].generate_mpc()
 
