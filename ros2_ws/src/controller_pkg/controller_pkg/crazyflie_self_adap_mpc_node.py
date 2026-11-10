@@ -102,31 +102,31 @@ class CrazyflieMPC(rclpy.node.Node):
         p_type = 'single_learner' # predictor type BONUS PART: 'multiple_learners'
         self.init_expert(name, kernel, kernel_std, lr, mh, p_type, quadrotor_dynamics, mpc_N, mpc_tf)
 
-        name = 'expert_2'
-        kernel = 'Gaussian' # kernel type, we only use 'Gaussian' for now
-        kernel_std = 1.0 # standard deviation
-        lr = 0.1 # learning rate
-        mh = 10 # memory horizon for past target position history
-        p_type = 'single_learner' # predictor type
-        self.init_expert(name, kernel, kernel_std, lr, mh, p_type, quadrotor_dynamics, mpc_N, mpc_tf)
+#         name = 'expert_2'
+#         kernel = 'Gaussian' # kernel type, we only use 'Gaussian' for now
+#         kernel_std = 1.0 # standard deviation
+#         lr = 0.1 # learning rate
+#         mh = 10 # memory horizon for past target position history
+#         p_type = 'single_learner' # predictor type
+#         self.init_expert(name, kernel, kernel_std, lr, mh, p_type, quadrotor_dynamics, mpc_N, mpc_tf)
+#
+#         name = 'expert_3'
+#         kernel = 'Gaussian' # kernel type, we only use 'Gaussian' for now
+#         kernel_std = 0.1 # standard deviation
+#         lr = 0.15 # learning rate
+#         mh = 10 # memory horizon for past target position history
+#         p_type = 'single_learner' # predictor type
+#         self.init_expert(name, kernel, kernel_std, lr, mh, p_type, quadrotor_dynamics, mpc_N, mpc_tf)
+#
+#         name = 'expert_4'
+#         kernel = 'Gaussian' # kernel type, we only use 'Gaussian' for now
+#         kernel_std = 1.5 # standard deviation
+#         lr = 0.1 # learning rate
+#         mh = 10 # memory horizon for past target position history
+#         p_type = 'single_learner' # predictor type
+#         self.init_expert(name, kernel, kernel_std, lr, mh, p_type, quadrotor_dynamics, mpc_N, mpc_tf)
 
-        name = 'expert_3'
-        kernel = 'Gaussian' # kernel type, we only use 'Gaussian' for now
-        kernel_std = 0.1 # standard deviation
-        lr = 0.15 # learning rate
-        mh = 10 # memory horizon for past target position history
-        p_type = 'single_learner' # predictor type
-        self.init_expert(name, kernel, kernel_std, lr, mh, p_type, quadrotor_dynamics, mpc_N, mpc_tf)
 
-        name = 'expert_4'
-        kernel = 'Gaussian' # kernel type, we only use 'Gaussian' for now
-        kernel_std = 1.5 # standard deviation
-        lr = 0.1 # learning rate
-        mh = 10 # memory horizon for past target position history
-        p_type = 'single_learner' # predictor type
-        self.init_expert(name, kernel, kernel_std, lr, mh, p_type, quadrotor_dynamics, mpc_N, mpc_tf)
-
-        
         # numpy array to store the expert error at each update step (at rate 50Hz)
         self.expert_error_array = np.zeros(len(self.mpc_expert_list))
         self.list_of_expert_error_arrays = [] # a list to store all the expert error arrays over time
