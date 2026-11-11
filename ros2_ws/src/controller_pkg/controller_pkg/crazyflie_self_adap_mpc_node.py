@@ -14,6 +14,7 @@ import pathlib
 from nav_msgs.msg import Odometry, Path
 from geometry_msgs.msg import PoseStamped, TwistStamped
 from std_msgs.msg import Empty
+from .run_logger import RunLogger
 
 from ament_index_python.packages import get_package_share_directory
 
@@ -55,7 +56,8 @@ class CrazyflieMPC(rclpy.node.Node):
 
         self.flight_mode = 'idle'
         self.trajectory_t0 = self.get_clock().now()
-        self.trajectory_type = 'lemniscate'
+        self.trajectory_type = 'switching'
+        self.target_trajectory_type = self.trajectory_type
         self.plot_trajectory = True
 
         self.motors = Motors.MOTOR_CLASSIC # MOTOR_CLASSIC, MOTOR_UPGRADE
@@ -102,29 +104,29 @@ class CrazyflieMPC(rclpy.node.Node):
         p_type = 'single_learner' # predictor type BONUS PART: 'multiple_learners'
         self.init_expert(name, kernel, kernel_std, lr, mh, p_type, quadrotor_dynamics, mpc_N, mpc_tf)
 
-#         name = 'expert_2'
-#         kernel = 'Gaussian' # kernel type, we only use 'Gaussian' for now
-#         kernel_std = 1.0 # standard deviation
-#         lr = 0.1 # learning rate
-#         mh = 10 # memory horizon for past target position history
-#         p_type = 'single_learner' # predictor type
-#         self.init_expert(name, kernel, kernel_std, lr, mh, p_type, quadrotor_dynamics, mpc_N, mpc_tf)
-#
-#         name = 'expert_3'
-#         kernel = 'Gaussian' # kernel type, we only use 'Gaussian' for now
-#         kernel_std = 0.1 # standard deviation
-#         lr = 0.15 # learning rate
-#         mh = 10 # memory horizon for past target position history
-#         p_type = 'single_learner' # predictor type
-#         self.init_expert(name, kernel, kernel_std, lr, mh, p_type, quadrotor_dynamics, mpc_N, mpc_tf)
-#
-#         name = 'expert_4'
-#         kernel = 'Gaussian' # kernel type, we only use 'Gaussian' for now
-#         kernel_std = 1.5 # standard deviation
-#         lr = 0.1 # learning rate
-#         mh = 10 # memory horizon for past target position history
-#         p_type = 'single_learner' # predictor type
-#         self.init_expert(name, kernel, kernel_std, lr, mh, p_type, quadrotor_dynamics, mpc_N, mpc_tf)
+        name = 'expert_2'
+        kernel = 'Gaussian' # kernel type, we only use 'Gaussian' for now
+        kernel_std = 1.0 # standard deviation
+        lr = 0.1 # learning rate
+        mh = 10 # memory horizon for past target position history
+        p_type = 'single_learner' # predictor type
+        self.init_expert(name, kernel, kernel_std, lr, mh, p_type, quadrotor_dynamics, mpc_N, mpc_tf)
+
+        name = 'expert_3'
+        kernel = 'Gaussian' # kernel type, we only use 'Gaussian' for now
+        kernel_std = 0.1 # standard deviation
+        lr = 0.15 # learning rate
+        mh = 10 # memory horizon for past target position history
+        p_type = 'single_learner' # predictor type
+        self.init_expert(name, kernel, kernel_std, lr, mh, p_type, quadrotor_dynamics, mpc_N, mpc_tf)
+
+        name = 'expert_4'
+        kernel = 'Gaussian' # kernel type, we only use 'Gaussian' for now
+        kernel_std = 1.5 # standard deviation
+        lr = 0.1 # learning rate
+        mh = 10 # memory horizon for past target position history
+        p_type = 'single_learner' # predictor type
+        self.init_expert(name, kernel, kernel_std, lr, mh, p_type, quadrotor_dynamics, mpc_N, mpc_tf)
 
 
         # numpy array to store the expert error at each update step (at rate 50Hz)
@@ -145,6 +147,10 @@ class CrazyflieMPC(rclpy.node.Node):
         self.last_time_stamp = None
         self.current_time_stamp = None
         ####
+        self.stop_log_after = 60.0
+        self.state_logger = RunLogger(f'tracking_selfadap_{self.trajectory_type}.csv')
+        self.pred_logger  = RunLogger(f'prederr_selfadap_{self.trajectory_type}.csv', mode='predErr', n_experts=len(self.mpc_expert_list))
+
 
         self.get_logger().info('Initialization completed...')
 
@@ -400,12 +406,12 @@ class CrazyflieMPC(rclpy.node.Node):
         #
         x0 = np.concatenate([self.position,self.velocity,self.attitude])
 
-        # # COMPLETED CODE
+        # COMPLETED CODE
         for expert_idx, expert in enumerate(self.mpc_expert_list):
-            # # Update the alpha value based on the current observed state
+            # Update the alpha value based on the current observed state
             expert.update_step(dt, x_now=x0, target_now=self.target_position) # 'dt' is the time elapsed from the previous update
 
-            # # get prediction error metric for self_adaptive_mpc.pythe expert
+            # get prediction error metric for self_adaptive_mpc.pythe expert
             self.expert_error_array[expert_idx] = expert.get_prediction_error()
 
         # # list of expert errors
@@ -421,6 +427,7 @@ class CrazyflieMPC(rclpy.node.Node):
             self.selected_expert_idx = self.adaptive_expert_selection()
             self.last_selection_time = now
 
+
         # stop once landing is complete
         if self.flight_mode == 'land' and t > 2*self.land_duration:
             self.flight_mode = 'idle'
@@ -431,6 +438,11 @@ class CrazyflieMPC(rclpy.node.Node):
         # # SOLVER CALL AT EVERY ITERATION
         status, x_mpc, u_mpc, yref, yref_e = self.mpc_expert_list[self.selected_expert_idx].solve_mpc(x0, self.target_position, dt)
         self.control_queue = deque(u_mpc)
+
+        if self.flight_mode == 'trajectory' and t <= self.stop_log_after:
+            ref = yref[:,0]
+            self.state_logger.log(t, x0, ref)
+            self.pred_logger.log_predErr(t, self.expert_error_array, self.P_t, self.selected_expert_idx)
 
         if self.plot_trajectory:
             mpc_solution_path = Path()
@@ -503,9 +515,15 @@ def main():
     node = CrazyflieMPC(quad_name, quadrotor_dynamics, mpc_N, mpc_tf, rate)
 
     # Standard node commands
-    rclpy.spin(node)
-    node.destroy_node()
-    rclpy.shutdown()
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        node.state_logger.close()
+        node.pred_logger.close()
+        node.destroy_node()
+        rclpy.shutdown()
 
 if __name__ == '__main__':
    main()

@@ -6,6 +6,7 @@ import rclpy.node
 
 from .quadrotor_simplified_model import QuadrotorSimplified
 from .tracking_mpc import TrajectoryTrackingMpc
+from .run_logger import RunLogger
 
 from crazyflie_interfaces.msg import AttitudeSetpoint
 
@@ -62,9 +63,10 @@ class CrazyflieMPC(rclpy.node.Node):
 
         # [LAB 7] Change the trajectory type to 'target_tracking'
         self.trajectory_type = 'target_tracking'
+        self.target_trajectory_type = 'horizontal_circle'
 
         self.plot_trajectory = True
-        
+
         self.motors = Motors.MOTOR_CLASSIC # MOTOR_CLASSIC, MOTOR_UPGRADE
 
         self.takeoff_duration = 5.0
@@ -76,7 +78,10 @@ class CrazyflieMPC(rclpy.node.Node):
 
         self.control_queue = None
         self.is_flying = False
-    
+
+        self.stop_log_after = 30.0
+        self.state_logger = RunLogger(f'tracking_{self.trajectory_type}_{self.target_trajectory_type}.csv')
+
         self.get_logger().info('Initialization completed...')
 
 
@@ -106,8 +111,8 @@ class CrazyflieMPC(rclpy.node.Node):
         # [TODO LAB 7] Add a ROS2 subscriber for the target Crazyflie position
         # (e) Target position subscriber
         # topic type -> PoseStamped
-        # topic name -> {target_prefix}/pose 
-        # callback -> self._target_pose_msg_callback    
+        # topic name -> {target_prefix}/pose
+        # callback -> self._target_pose_msg_callback
 
         self.position_sub       = self.create_subscription(PoseStamped, f'{prefix}/pose', self._pose_msg_callback, 10)
         self.velocity_sub       = self.create_subscription(TwistStamped, f'{prefix}/twist', self._twist_msg_callback, 10)
@@ -116,9 +121,9 @@ class CrazyflieMPC(rclpy.node.Node):
         self.mpc_solution_path_pub = self.create_publisher(Path, f'{prefix}/mpc_solution_path', 10)
         self.attitude_setpoint_pub   = self.create_publisher(AttitudeSetpoint, f'{prefix}/cmd_attitude_setpoint', 10)
 
-        
-        
-        self.takeoffService = self.create_subscription(Empty, f'/all/mpc_takeoff', self.takeoff, 10)
+
+        # Comment out takeoff since we want to start tracking right away
+        # self.takeoffService = self.create_subscription(Empty, f'/all/mpc_takeoff', self.takeoff, 10)
         self.landService = self.create_subscription(Empty, f'/all/mpc_land', self.land, 10)
         self.trajectoryService = self.create_subscription(Empty, f'/all/mpc_trajectory', self.start_trajectory, 10)
         self.hoverService = self.create_subscription(Empty, f'/all/mpc_hover', self.hover, 10)
@@ -131,24 +136,24 @@ class CrazyflieMPC(rclpy.node.Node):
         # MPC control loop running at self.rate (Hz)
         self.create_timer(1./self.rate, self._mpc_solver_loop)
 
-        # [TODO] PART 2: Add ROS2 timers for the main control loop (callback -> self._main_loop) and 
+        # [TODO] PART 2: Add ROS2 timers for the main control loop (callback -> self._main_loop) and
         #                the MPC solver loop (self._mpc_solver_loop). This is part of __init__().
         # Hint: Keep in mind that the variable self.rate is the control update rate specified in Hz
-        
+
 
 
     # Be careful about indentation, this is outside __init()__
     #
     # [TODO] PART 3: Parse the ROS2 position messages. Make sure to use given variable names.
-    # 
-    # NOTE: 
-    # - Position and velocity is a Python list (not numpy array) containing the (x,y,z coordinates).
-    # - Attitude is a Python list of the Euler angles 
     #
-    # Hints: 
+    # NOTE:
+    # - Position and velocity is a Python list (not numpy array) containing the (x,y,z coordinates).
+    # - Attitude is a Python list of the Euler angles
+    #
+    # Hints:
     #   1. Look the PoseStamped (and similarly others) message structure at https://docs.ros2.org/foxy/api/geometry_msgs/msg/PoseStamped.html.
-    #   2. You can use tf_transformations for the conversion into different orientation representations. 
-    #   3. Be sure to wrap the attitude angles between -pi to +pi. 
+    #   2. You can use tf_transformations for the conversion into different orientation representations.
+    #   3. Be sure to wrap the attitude angles between -pi to +pi.
 
     def _pose_msg_callback(self, msg: PoseStamped):
         self.position = np.array([msg.pose.position.x, msg.pose.position.y, msg.pose.position.z]).tolist()
@@ -185,7 +190,7 @@ class CrazyflieMPC(rclpy.node.Node):
         self.go_to_position = np.array([self.position[0],
                                         self.position[1],
                                         1.0])
-        
+
     def hover(self, msg):
         self.trajectory_changed = True
         self.flight_mode = 'hover'
@@ -238,7 +243,7 @@ class CrazyflieMPC(rclpy.node.Node):
         elif self.trajectory_type == 'lemniscate':
             a = 1.0 #m
             b = 0.5 * np.tanh(0.1*t)
-           
+
             p = self.trajectory_start_position + a * np.array([np.sin(b*t), np.cos(b*t)*np.sin(b*t),  0]).T
             v = np.array([a*b*np.cos(b*t), a*b*np.cos(2*b*t), 0]).T
 
@@ -260,9 +265,9 @@ class CrazyflieMPC(rclpy.node.Node):
             pxr = self.target_position[0]
             pyr = self.target_position[1]
             pzr = self.target_position[2]
-            
+
             return np.array([pxr,pyr,pzr,0.,0.,0.,0.,0.,0.])
-            
+
         else:
             return np.array([0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0])
 
@@ -281,14 +286,14 @@ class CrazyflieMPC(rclpy.node.Node):
         elif self.flight_mode == 'hover':
             yref = np.repeat(np.array([[*self.go_to_position,0.,0.,0.,0.,0.,0.]]).T, self.mpc_N, axis=1)
         return yref
-    
+
 
     # [TODO] PART 5: Implement the cmd_attitude_setpoint function to publish attitude setpoint commands.
     # Instructions:
     # - Create an AttitudeSetpoint message
     # - Set the roll, pitch, yaw_rate, and thrust fields from the input parameters
     # - Publish the message using self.attitude_setpoint_pub
-    # - See the structure of the message in 
+    # - See the structure of the message in
     #       ae740_crazyflie_sim/ros2_ws/src/crazyswarm2/crazyflie_interfaces/msg/AttitudeSetpoint.msg
     #
     def cmd_attitude_setpoint(self, roll, pitch, yaw_rate, thrust):
@@ -312,7 +317,7 @@ class CrazyflieMPC(rclpy.node.Node):
     def _mpc_solver_loop(self):
         if not self.is_flying:
             return
-        
+
         if self.trajectory_changed:
             self.trajectory_start_position = self.position
             self.trajectory_t0 = self.get_clock().now()
@@ -324,15 +329,15 @@ class CrazyflieMPC(rclpy.node.Node):
 
         # [TODO] PART 6: Load the initial state variable and reference variable for the MPC problem
         #                   and solve the MPC problem at the current time step
-        # 
+        #
         # x0 = ... (numpy array (size=9) of the crazyflie state -> position, velocity, attitude)
         # yref = ... (2D numpy array of the reference trajectory) (shape = NUM_STATE_VAR, NUM_MPC_STEPS)
         # yref_e = ... (1D numpy array for the terminal state variable (size=NUM_STATE_VAR))
         #
-        # status, x_mpc, u_mpc = ... 
+        # status, x_mpc, u_mpc = ...
         #
-        # Hints: 
-        #   1. Study the structure of trajectory from the self.navigator(t) function 
+        # Hints:
+        #   1. Study the structure of trajectory from the self.navigator(t) function
         #   2. Remember that self.position etc. are all python lists (not numpy arrays)
         #   3. Use the solve_mpc() method from the mpc_solver object, see the function in the tracking_mpc.py file
 
@@ -346,6 +351,10 @@ class CrazyflieMPC(rclpy.node.Node):
         yref_e = trajectory[:,-1]
         status, x_mpc, u_mpc = self.mpc_solver.solve_mpc(x0, yref, yref_e)
         self.control_queue = deque(u_mpc)
+
+        if self.flight_mode == 'trajectory' and self.t <= self.stop_log_after:
+            ref = yref[:,0]
+            self.state_logger.log(self.t, x0, ref)
 
         if self.plot_trajectory:
             mpc_solution_path = Path()
@@ -369,7 +378,7 @@ class CrazyflieMPC(rclpy.node.Node):
         if not self.position or not self.velocity or not self.attitude:
             self.get_logger().warning("Empty state message.")
             return
-        
+
         if not self.is_flying:
             self.is_flying = True
             self.cmd_attitude_setpoint(0.,0.,0.,0)
@@ -378,14 +387,11 @@ class CrazyflieMPC(rclpy.node.Node):
             control = self.control_queue.popleft()
             thrust_pwm = self.thrust_to_pwm(control[3])
             yawrate = 3.*(np.degrees(self.attitude[2]))
-            self.cmd_attitude_setpoint(np.degrees(control[0]), 
-                                    np.degrees(control[1]), 
-                                    yawrate, 
+            self.cmd_attitude_setpoint(np.degrees(control[0]),
+                                    np.degrees(control[1]),
+                                    yawrate,
                                     thrust_pwm)
 
-    def destroy_node(self):
-        self.logger_csv.close()
-        super().destroy_node()
 
 def main():
     rclpy.init()
@@ -396,7 +402,7 @@ def main():
     Ixx = 2.3951e-5
     Iyy = 2.3951e-5
     Izz = 3.2347e-5
-    tau = 0.08  
+    tau = 0.08
 
     # MPC problem parameters
     mpc_N = 50 # number of steps in the MPC problem
@@ -408,11 +414,16 @@ def main():
 
     quadrotor_dynamics = QuadrotorSimplified(mass, arm_length, Ixx, Iyy, Izz, tau)
     node = CrazyflieMPC(quad_name, quadrotor_dynamics, mpc_N, mpc_tf, rate)
-    
+
     # Standard node commands
-    rclpy.spin(node)
-    node.destroy_node()
-    rclpy.shutdown()
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        node.state_logger.close()
+        node.destroy_node()
+        rclpy.shutdown()
 
 if __name__ == '__main__':
    main()

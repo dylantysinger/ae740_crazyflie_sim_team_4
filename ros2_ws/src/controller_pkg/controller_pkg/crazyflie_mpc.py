@@ -53,6 +53,12 @@ class CrazyflieMPC(rclpy.node.Node):
         self.flight_mode = 'idle'
         self.trajectory_t0 = self.get_clock().now()
         self.trajectory_type = 'lemniscate'
+
+        self.enableTrajectorySwitch = True
+        self.trajectorySwitchTime = 15.0 # sec
+        self.trajectory_type_1 = self.trajectory_type
+        self.trajectory_type_2 = 'horizontal_circle'
+
         self.plot_trajectory = True
 
         self.motors = Motors.MOTOR_CLASSIC # MOTOR_CLASSIC, MOTOR_UPGRADE
@@ -66,8 +72,8 @@ class CrazyflieMPC(rclpy.node.Node):
 
         self.control_queue = None
         self.is_flying = False
-        
-        self.logger_csv = RunLogger('tracking_mpc')
+
+        # self.logger_csv = RunLogger('tracking_mpc')
 
         self.get_logger().info('Initialization completed...')
 
@@ -221,7 +227,7 @@ class CrazyflieMPC(rclpy.node.Node):
         elif self.trajectory_type == 'lemniscate':
             a = 1.0 #m
             b = 0.5 * np.tanh(0.1*t)
-           
+
             p = self.trajectory_start_position + a * np.array([np.sin(b*t), np.cos(b*t)*np.sin(b*t),  0]).T
             v = np.array([a*b*np.cos(b*t), a*b*np.cos(2*b*t), 0]).T
 
@@ -248,6 +254,9 @@ class CrazyflieMPC(rclpy.node.Node):
             yref = np.array([np.array([*((self.go_to_position - self.trajectory_start_position)*(1./(1. + np.exp(-(12.0 * (t_mpc - self.land_duration) / self.land_duration + 6.0)))) + self.trajectory_start_position),0.,0.,0.,0.,0.,0.]) for t_mpc in t_mpc_array]).T
             # yref = np.repeat(np.array([[*self.go_to_position,0,0,0]]).T, self.mpc_N, axis=1)
         elif self.flight_mode == 'trajectory':
+            if self.enableTrajectorySwitch:
+                segment = int(t // self.trajectorySwitchTime)          # 0, 1, 2, 3, ...
+                self.trajectory_type = self.trajectory_type_1 if segment % 2 == 0 else self.trajectory_type_2
             t_mpc_array = np.linspace(t, self.mpc_tf + t, self.mpc_N+1)
             yref = np.array([self.trajectory_function(t_mpc) for t_mpc in t_mpc_array]).T
         elif self.flight_mode == 'hover':
@@ -302,6 +311,8 @@ class CrazyflieMPC(rclpy.node.Node):
         t = (self.get_clock().now() - self.trajectory_t0).nanoseconds / 10.0**9
         trajectory = self.navigator(t)
 
+
+
         # [TODO] PART 6: Load the initial state variable and reference variable for the MPC problem
         #                   and solve the MPC problem at the current time step
         #
@@ -324,9 +335,9 @@ class CrazyflieMPC(rclpy.node.Node):
         x0 = np.concatenate([self.position,self.velocity,self.attitude])
         yref = trajectory[:, :self.mpc_N]
         yref_e = trajectory[:,-1]
-        
-        if self.flight_mode =='trajectory' and t <= 10.0:
-            self.logger_csv.log(t, x0, trajectory[:,0])
+
+        # if self.flight_mode =='trajectory' and t <= 10.0:
+        #     self.logger_csv.log(t, x0, trajectory[:,0])
 
         status, x_mpc, u_mpc = self.mpc_solver.solve_mpc(x0, yref, yref_e)
         self.control_queue = deque(u_mpc)
@@ -370,10 +381,6 @@ class CrazyflieMPC(rclpy.node.Node):
                                     yawrate,
                                     thrust_pwm)
 
-    def destroy_node(self):
-        self.logger_csv.close()
-        super().destroy_node()
-
 def main():
     rclpy.init()
 
@@ -395,9 +402,14 @@ def main():
     node = CrazyflieMPC(quad_name, quadrotor_dynamics, mpc_N, mpc_tf, rate)
 
     # Standard node commands
-    rclpy.spin(node)
-    node.destroy_node()
-    rclpy.shutdown()
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        # node.logger_csv.close()
+        node.destroy_node()
+        rclpy.shutdown()
 
 if __name__ == '__main__':
    main()
