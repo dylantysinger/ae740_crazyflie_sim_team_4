@@ -287,7 +287,7 @@ class SelfAdaptiveMPC:
             self.target_dense_pose_log[:,0] = np.copy(target_now[:3]) # only x,y,z position
 
             # construct target memory vector starting from 2nd index to compare with most recent target position
-            start = 1
+            start = int(self.step_size)
             step = int(self.step_size)
             num_indices = int(self.memory_horizon)
             target_memory_vector = self.target_dense_pose_log[:, start:start+num_indices*step:step].T.flatten()  # shape (memory_horizon*3, )
@@ -298,7 +298,7 @@ class SelfAdaptiveMPC:
 
             rf = (1 / self.n_rf) * np.cos(self.omega @ z + np.asarray(self.b).flatten())
 
-        	h_obs = (target_now[:3] - self.target_last[:3]) / dt
+            h_obs = (self.target_dense_pose_log[:, 0] - self.target_dense_pose_log[:, step]) / self.mpc_dt
 	        # Step 6: Calculate estimation loss
             h_pred = alpha_in @ rf
 
@@ -357,8 +357,9 @@ class SelfAdaptiveMPC:
                 rf = (1 / self.n_rf) * np.cos(self.omega @ z + np.asarray(self.b).flatten())
 
                 # Step 6: Calculate estimation loss
-                target_next = self.alpha_last @ rf
-
+                v_next = self.alpha_last @ rf
+                target_next = predicted_traj[:,i] + self.mpc_dt * v_next
+                                
                 predicted_traj[:,i+1] = target_next
                 actual_idx = int((self.num_steps - 1 - i) * self.step_size)
                 actual_traj[:,i+1] = self.target_dense_pose_log[:, actual_idx]
@@ -415,6 +416,9 @@ class SelfAdaptiveMPC:
             # - In the end, store the final predicted target state in yref_e variable.
             # - Note that yref has shape (nx, N) and yref_e has shape (nx, ), where nx=9, hence fill appropriately.
 
+            prev = target_now[:3]
+            yref[:3,0] = target_now[:3]
+            yref[3:6,0] = (self.target_dense_pose_log[:, 0] - self.target_dense_pose_log[:, step]) / self.mpc_dt
             for i in range(N):
 
                 # Step 1
@@ -424,15 +428,15 @@ class SelfAdaptiveMPC:
                 rf = (1 / self.n_rf) * np.cos(self.omega @ z + np.asarray(self.b).flatten())
 
                 # Step 6: Calculate estimation loss
-                target_next = self.alpha_last @ rf
+                v_next = self.alpha_last @ rf
 
-                yref[:3,i] = target_next
-                target_in = np.copy(target_next)
+                target_next = prev + self.mpc_dt * v_next
+                if i < N-1:
+                    yref[:3,i+1] = target_next
+                    yref[3:6,i+1] = v_next # Add velocity reference
+                prev = target_next
                 # roll memory vector and update with latest predicted position
                 target_memory_vector = np.concatenate([target_next, target_memory_vector[:-3]]) # shift by 3 for x,y,z and then add the latest predicted position
-
-                yref_e = target_next; # final predicted target state
-
 
         if self.predictor_type=='multiple_learners':
             raise NotImplementedError('multiple_learners predictor type not implemented yet')
@@ -443,6 +447,7 @@ class SelfAdaptiveMPC:
             self.ocp_solver.set(i, 'yref', np.array([*yref[:,i], *self.hover_control]))
         yref_e = np.zeros(nx)
         yref_e[:3] = target_next
+        yref_e[3:6] = v_next
         self.ocp_solver.set(N, 'yref', yref_e)
 
         # set the initial state in the solver
