@@ -54,7 +54,7 @@ class CrazyflieMPC(rclpy.node.Node):
         self.trajectory_t0 = self.get_clock().now()
         self.trajectory_type = 'lemniscate'
 
-        self.enableTrajectorySwitch = True
+        self.enableTrajectorySwitch = False
         self.trajectorySwitchTime = 15.0 # sec
         self.trajectory_type_1 = self.trajectory_type
         self.trajectory_type_2 = 'horizontal_circle'

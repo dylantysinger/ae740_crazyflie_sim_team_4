@@ -51,7 +51,6 @@ class CrazyflieMPC(rclpy.node.Node):
         self.attitude = []
         self.R_WB = np.eye(3)
         self.target_position = None
-
         self.trajectory_changed = True
 
         self.flight_mode = 'idle'
